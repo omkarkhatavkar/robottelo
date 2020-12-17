@@ -1,5 +1,4 @@
-=========
-Robottelo
+Test Robottelo
 =========
 
 .. image:: https://codecov.io/gh/SatelliteQE/robottelo/branch/master/graph/badge.svg
