@@ -33,8 +33,8 @@ from robottelo.rhsso_utils import create_group
 from robottelo.rhsso_utils import create_new_rhsso_user
 from robottelo.rhsso_utils import delete_rhsso_group
 from robottelo.rhsso_utils import delete_rhsso_user
-from robottelo.rhsso_utils import get_rhsso_client_id
 from robottelo.rhsso_utils import update_rhsso_user
+from robottelo.utils.sso import sso_host
 
 pytestmark = [pytest.mark.destructive, pytest.mark.run_in_one_thread]
 
@@ -355,7 +355,7 @@ def test_external_new_user_login_and_check_count_rhsso(
     :expectedresults: New User created in RHSSO server should able to get log-in
         and correct count shown for external users
     """
-    client_id = get_rhsso_client_id(module_target_sat)
+    client_id = sso_host.get_rhsso_client_id(module_target_sat)
     user_details = create_new_rhsso_user(client_id)
     login_details = {
         'username': user_details['username'],
@@ -402,7 +402,6 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
 
     :expectedresults: external rhsso user should not able to login with same username as internal
     """
-    client_id = get_rhsso_client_id(module_target_sat)
     username = gen_string('alpha')
     module_target_sat.api.User(
         admin=True,
@@ -411,7 +410,9 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
         login=username,
         password=settings.rhsso.rhsso_password,
     ).create()
-    external_rhsso_user = create_new_rhsso_user(client_id, username=username)
+    external_rhsso_user = create_new_rhsso_user(
+        sso_host.get_rhsso_client_id(module_target_sat), username=username
+    )
     login_details = {
         'username': external_rhsso_user['username'],
         'password': settings.rhsso.rhsso_password,
@@ -448,7 +449,7 @@ def test_user_permissions_rhsso_user_after_group_delete(
         group deletion.
 
     """
-    get_rhsso_client_id(module_target_sat)
+    sso_host.get_rhsso_client_id(module_target_sat)
     username = settings.rhsso.rhsso_user
     location_name = gen_string('alpha')
     login_details = {
@@ -515,7 +516,7 @@ def test_user_permissions_rhsso_user_multiple_group(
     :expectedresults: external rhsso user have highest level of permissions from among the
         multiple groups.
     """
-    get_rhsso_client_id(module_target_sat)
+    sso_host.get_rhsso_client_id(module_target_sat)
     username = settings.rhsso.rhsso_user
     location_name = gen_string('alpha')
     login_details = {
