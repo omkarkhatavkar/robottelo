@@ -339,6 +339,7 @@ def test_external_new_user_login_and_check_count_rhsso(
     rhsso_setting_setup,
     external_user_count,
     module_target_sat,
+    default_sso_host,
 ):
     """Verify the external new user login and verify the external user count
 
@@ -357,7 +358,7 @@ def test_external_new_user_login_and_check_count_rhsso(
     :expectedresults: New User created in RHSSO server should able to get log-in
         and correct count shown for external users
     """
-    client_id = sso_host.get_rhsso_client_id(module_target_sat)
+    client_id = default_sso_host.get_rhsso_client_id(module_target_sat)
     user_details = create_new_rhsso_user(client_id)
     login_details = {
         'username': user_details['username'],
@@ -385,6 +386,7 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
     module_org,
     module_location,
     module_target_sat,
+    default_sso_host,
 ):
     """Verify the failure of login for the external rhsso user in case same username
     internal user exists
@@ -413,7 +415,7 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
         password=settings.rhsso.rhsso_password,
     ).create()
     external_rhsso_user = create_new_rhsso_user(
-        sso_host.get_rhsso_client_id(module_target_sat), username=username
+        default_sso_host.get_rhsso_client_id(module_target_sat), username=username
     )
     login_details = {
         'username': external_rhsso_user['username'],
@@ -433,6 +435,7 @@ def test_user_permissions_rhsso_user_after_group_delete(
     module_org,
     module_location,
     module_target_sat,
+    default_sso_host,
 ):
     """Verify the rhsso user permissions in satellite should get revoked after the
         termination of rhsso user's external rhsso group
@@ -451,7 +454,7 @@ def test_user_permissions_rhsso_user_after_group_delete(
         group deletion.
 
     """
-    sso_host.get_rhsso_client_id(module_target_sat)
+    default_sso_host.get_rhsso_client_id(module_target_sat)
     username = settings.rhsso.rhsso_user
     location_name = gen_string('alpha')
     login_details = {
@@ -500,6 +503,7 @@ def test_user_permissions_rhsso_user_multiple_group(
     groups_teardown,
     rhsso_groups_teardown,
     module_target_sat,
+    default_sso_host,
 ):
     """Verify the permissions of the rhsso user, if it exists in multiple groups (admin/non-admin).
         The rhsso user should contain the highest level of permissions from among the
@@ -518,7 +522,7 @@ def test_user_permissions_rhsso_user_multiple_group(
     :expectedresults: external rhsso user have highest level of permissions from among the
         multiple groups.
     """
-    sso_host.get_rhsso_client_id(module_target_sat)
+    default_sso_host.get_rhsso_client_id(module_target_sat)
     username = settings.rhsso.rhsso_user
     location_name = gen_string('alpha')
     login_details = {
