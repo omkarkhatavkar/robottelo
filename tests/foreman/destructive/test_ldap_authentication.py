@@ -29,11 +29,6 @@ from robottelo.constants import CERT_PATH
 from robottelo.constants import HAMMER_SESSIONS
 from robottelo.constants import LDAP_ATTR
 from robottelo.datafactory import gen_string
-from robottelo.rhsso_utils import create_group
-from robottelo.rhsso_utils import create_new_rhsso_user
-from robottelo.rhsso_utils import delete_rhsso_group
-from robottelo.rhsso_utils import delete_rhsso_user
-from robottelo.rhsso_utils import update_rhsso_user
 from robottelo.utils.sso import sso_host
 
 pytestmark = [pytest.mark.destructive, pytest.mark.run_in_one_thread]
@@ -115,11 +110,11 @@ def groups_teardown(module_target_sat):
 
 
 @pytest.fixture()
-def rhsso_groups_teardown(module_target_sat):
+def rhsso_groups_teardown(module_target_sat, default_sso_host):
     """Teardown the rhsso groups"""
     yield
     for group_name in ('sat_users', 'sat_admins'):
-        delete_rhsso_group(group_name)
+        default_sso_host.delete_rhsso_group(group_name)
 
 
 def generate_otp(secret):
@@ -276,7 +271,7 @@ def test_single_sign_on_using_rhsso(
         assert settings.rhsso.rhsso_user in actual_user
 
 
-def test_external_logout_rhsso(enable_external_auth_rhsso, rhsso_setting_setup, module_target_sat):
+def test_external_logout_rhsso(rhsso_setting_setup, enable_external_auth_rhsso, module_target_sat):
     """Verify the external logout page navigation with external authentication RH-SSO
 
     :id: 87b5e08e-69c6-11ea-8126-e74d80ea4308
@@ -304,8 +299,8 @@ def test_external_logout_rhsso(enable_external_auth_rhsso, rhsso_setting_setup, 
 
 
 def test_session_expire_rhsso_idle_timeout(
-    enable_external_auth_rhsso,
     rhsso_setting_setup,
+    enable_external_auth_rhsso,
     rhsso_setting_setup_with_timeout,
     module_target_sat,
 ):
@@ -333,8 +328,8 @@ def test_session_expire_rhsso_idle_timeout(
 
 
 def test_external_new_user_login_and_check_count_rhsso(
-    enable_external_auth_rhsso,
     rhsso_setting_setup,
+    enable_external_auth_rhsso,
     external_user_count,
     module_target_sat,
     default_sso_host,
@@ -357,7 +352,7 @@ def test_external_new_user_login_and_check_count_rhsso(
         and correct count shown for external users
     """
     client_id = default_sso_host.get_rhsso_client_id(module_target_sat)
-    user_details = create_new_rhsso_user(client_id)
+    user_details = default_sso_host.create_new_rhsso_user(client_id)
     login_details = {
         'username': user_details['username'],
         'password': settings.rhsso.rhsso_password,
@@ -370,7 +365,7 @@ def test_external_new_user_login_and_check_count_rhsso(
     updated_count = len([user for user in users if user.auth_source_name == 'External'])
     assert updated_count == external_user_count + 1
     # checking delete user can't login anymore
-    delete_rhsso_user(user_details['username'])
+    default_sso_host.delete_rhsso_user(user_details['username'])
     with module_target_sat.ui_session(login=False) as rhsso_session:
         with pytest.raises(NavigationTriesExceeded) as error:
             rhsso_session.rhsso_login.login(login_details)
@@ -379,8 +374,8 @@ def test_external_new_user_login_and_check_count_rhsso(
 
 
 def test_login_failure_rhsso_user_if_internal_user_exist(
-    enable_external_auth_rhsso,
     rhsso_setting_setup,
+    enable_external_auth_rhsso,
     module_org,
     module_location,
     module_target_sat,
@@ -412,7 +407,7 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
         login=username,
         password=settings.rhsso.rhsso_password,
     ).create()
-    external_rhsso_user = create_new_rhsso_user(
+    external_rhsso_user = default_sso_host.create_new_rhsso_user(
         default_sso_host.get_rhsso_client_id(module_target_sat), username=username
     )
     login_details = {
@@ -427,8 +422,8 @@ def test_login_failure_rhsso_user_if_internal_user_exist(
 
 
 def test_user_permissions_rhsso_user_after_group_delete(
-    enable_external_auth_rhsso,
     rhsso_setting_setup,
+    enable_external_auth_rhsso,
     session,
     module_org,
     module_location,
@@ -461,8 +456,8 @@ def test_user_permissions_rhsso_user_after_group_delete(
     }
 
     group_name = gen_string('alpha')
-    create_group(group_name=group_name)
-    update_rhsso_user(username, group_name=group_name)
+    default_sso_host.create_group(group_name=group_name)
+    default_sso_host.update_rhsso_user(username, group_name=group_name)
 
     # creating satellite external group
     user_group = module_target_sat.cli_factory.make_usergroup({'admin': 1, 'name': group_name})
@@ -484,7 +479,7 @@ def test_user_permissions_rhsso_user_after_group_delete(
         assert login_details['username'] in current_user
 
     # delete the rhsso group and verify the rhsso-user permissions
-    delete_rhsso_group(group_name=group_name)
+    default_sso_host.delete_rhsso_group(group_name=group_name)
     with module_target_sat.ui_session(login=False) as rhsso_session:
         rhsso_session.rhsso_login.login(login_details)
         with pytest.raises(NavigationTriesExceeded) as error:
@@ -493,8 +488,8 @@ def test_user_permissions_rhsso_user_after_group_delete(
 
 
 def test_user_permissions_rhsso_user_multiple_group(
-    enable_external_auth_rhsso,
     rhsso_setting_setup,
+    enable_external_auth_rhsso,
     session,
     module_org,
     module_location,
@@ -540,8 +535,8 @@ def test_user_permissions_rhsso_user_multiple_group(
     external_auth_source = module_target_sat.cli.ExternalAuthSource.info({'name': "External"})
     for group_name, argument in zip(group_names, arguments):
         # adding/creating rhsso groups
-        create_group(group_name=group_name)
-        update_rhsso_user(username, group_name=group_name)
+        default_sso_host.create_group(group_name=group_name)
+        default_sso_host.update_rhsso_user(username, group_name=group_name)
         argument['name'] = group_name
 
         # creating satellite external groups
