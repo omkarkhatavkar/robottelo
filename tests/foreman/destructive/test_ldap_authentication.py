@@ -29,7 +29,6 @@ from robottelo.constants import CERT_PATH
 from robottelo.constants import HAMMER_SESSIONS
 from robottelo.constants import LDAP_ATTR
 from robottelo.datafactory import gen_string
-from robottelo.utils.sso import sso_host
 
 pytestmark = [pytest.mark.destructive, pytest.mark.run_in_one_thread]
 
