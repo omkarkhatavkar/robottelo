@@ -24,7 +24,7 @@ from robottelo.utils.sso import sso_host
 
 @pytest.fixture(scope='session')
 def default_sso_host():
-    """returns default sso host"""
+    """Returns default sso host"""
     return sso_host
 
 
