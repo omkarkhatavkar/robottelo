@@ -34,7 +34,7 @@ jobs:
           direction: last
 
       - name: Fail automerge if PRT was not initiated
-        if: steps.find-prt-comment.outputs.comment-body == ""
+        if: steps.find-prt-comment.outputs.comment-body == ''
         run: |
           echo "::error PRT comment not added the PR"
 
