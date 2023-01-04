@@ -42,6 +42,13 @@ jobs:
       - name: Wait for PRT checks to get initiated
         run: |
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 600
+      
+      - name: 'Wait for status checks to Pass'
+        id: waitforstatuschecks
+        uses: "WyriHaximus/github-action-wait-for-status@v2"
+        with:
+          ignoreActions: "Automerge auto-cherry-picked pr"
+          checkInterval: 60
 
       - id: automerge
         name: Auto merge of cherry-picked PRs.
