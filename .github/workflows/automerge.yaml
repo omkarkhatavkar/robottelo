@@ -45,7 +45,8 @@ jobs:
 
       - name: 'Wait for status checks to Pass'
         id: waitforstatuschecks
-        uses: "WyriHaximus/github-action-wait-for-status@v2"
+
+        uses: "WyriHaximus/github-action-wait-for-status@v1.7.1"
         with:
           ignoreActions: "Automerge auto-cherry-picked pr"
           checkInterval: 60
