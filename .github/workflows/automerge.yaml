@@ -43,19 +43,9 @@ jobs:
         run: |
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 600
 
-      - name: 'Wait for status checks to Pass'
-        id: waitforstatuschecks
-        uses: "WyriHaximus/github-action-wait-for-status@v2"
-        with:
-          ignoreActions: "Automerge auto-cherry-picked pr"
-          checkInterval: 60
-        env:
-          GITHUB_TOKEN: "${{ secrets.CHERRYPICK_PAT }}"
-
       - id: automerge
         name: Auto merge of cherry-picked PRs.
         uses: "pascalgn/automerge-action@v0.15.5"
-        if: steps.waitforstatuschecks.outputs.status == 'success'
         env:
           GITHUB_TOKEN: "${{ secrets.CHERRYPICK_PAT }}"
           MERGE_LABELS: "AutoMerge_Cherry_Picked, Auto_Cherry_Picked"
@@ -70,4 +60,3 @@ jobs:
             echo "Pull request ${{ steps.automerge.outputs.pullRequestNumber }} is Auto Merged !"
           else
             echo "::error Auto Merge of Pull request ${{ steps.automerge.outputs.pullRequestNumber }} is ${{steps.automerge.outputs.mergeResult}} !"
-          fi
