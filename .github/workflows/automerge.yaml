@@ -47,7 +47,7 @@ jobs:
         id: waitforstatuschecks
         uses: lewagon/wait-on-check-action@v1.2.0
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.head_ref }}
           check-name: 'Robottelo-Runner'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 60
