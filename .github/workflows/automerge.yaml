@@ -42,13 +42,37 @@ jobs:
       - name: Wait for PRT checks to get initiated
         run: |
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 60
+          
+      - name: is PRT check Passed ?
+        run: |
+          counter=0
+          STATUSES=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r 'length')
+          if [ $STATUSES == 0 ]; then
+              echo "::error PRT failed to start ! Stopping."
+              exit 1
+          else
+              CONTEXT=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].context')
+              COMMIT_STATUS="pending"
+              if ["$CONTEXT" == "Robottelo-Runner"]; then
+                  until [ "$COMMIT_STATUS" == "success" ] || [ "$COMMIT_STATUS" == "failure" ] || [$counter -gt 10]; do
+                      sleep 300
+                      COMMIT_STATUS=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].state')
+                      echo "Waiting for PRT to complete....."
+                      echo "Robottelo-Runner - $COMMIT_STATUS"
+                  done
+              fi
+              if ["$COMMIT_STATUS" == "success"] then;
+                  echo "PRT Passed Successfully!"
+              else
+                  echo "::error PRT failed ! or PRT timeout !"
+              fi
+          fi
 
       - name: 'Wait for status checks to Pass'
         id: waitforstatuschecks
         uses: lewagon/wait-on-check-action@v1.2.0
         with:
           ref: ${{ github.head_ref }}
-          check-name: 'Robottelo-Runner'
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 60
           allowed-conclusions: success,skipped
