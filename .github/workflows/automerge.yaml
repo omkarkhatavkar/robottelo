@@ -44,21 +44,20 @@ jobs:
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 60
           
       - name: is PRT check Passed ?
-        run: | 
+        run: |
           counter=0
-          STATUSES=$(curl -s https://api.github.com/repos/omkarkhatavkar/robottelo/statuses/cherry-pick-6.12.z-fe828943c2c93c775997c2622de95c757dbd8640  | jq -r 'length')
+          STATUSES=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r 'length')
           if [ $STATUSES == 0 ]; then
-              echo "::error PRT failed to start ! Stopping."
-              exit 1
+              echo "::error PRT failed to start ! Stopping." && exit 1
           else
-              CONTEXT=$(curl -s https://api.github.com/repos/omkarkhatavkar/robottelo/statuses/cherry-pick-6.12.z-fe828943c2c93c775997c2622de95c757dbd8640  | jq -r '.[0].context')
-              COMMIT_STATUS="pending"
+              CONTEXT=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].context')
+              COMMIT_STATUS=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].state')
               if [ "$CONTEXT" == "Robottelo-Runner" ]; then
                   until [ "$COMMIT_STATUS" == "success" ] || [ "$COMMIT_STATUS" == "failure" ] || [ $counter -gt 10 ]; do
-                      sleep 300
-                      COMMIT_STATUS=$(curl -s https://api.github.com/repos/omkarkhatavkar/robottelo/statuses/cherry-pick-6.12.z-fe828943c2c93c775997c2622de95c757dbd8640  | jq -r '.[0].state')
                       echo "Waiting for PRT to complete....."
-                      echo "Robottelo-Runner - $COMMIT_STATUS"
+                      sleep 300
+                      COMMIT_STATUS=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].state')
+                      echo "Robottelo-Runner : $COMMIT_STATUS"
                   done
               else
                   echo "::error Failed to get Robottelo-Runner status " && exit 1 
@@ -66,9 +65,10 @@ jobs:
               if [ "$COMMIT_STATUS" == "success" ]; then
                   echo "PRT Passed Successfully!"
               else
-                  echo "::error PRT failed ! or PRT timeout !"
+                  echo "::error PRT failed/timeout!" & exit 1
               fi
           fi
+
       - name: 'Wait for status checks to Pass'
         id: waitforstatuschecks
         uses: lewagon/wait-on-check-action@v1.2.0
@@ -76,6 +76,7 @@ jobs:
           ref: ${{ github.head_ref }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 60
+          running-workflow-name: 'Wait for status checks to Pass'
           allowed-conclusions: success,skipped
   
       - id: automerge
