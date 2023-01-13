@@ -50,7 +50,7 @@ jobs:
           ref: ${{ github.head_ref }}
           repo-token: ${{ secrets.CHERRYPICK_PAT }}
           wait-interval: 60
-          running-workflow-name: 'Wait for other status checks to Pass'
+          running-workflow-name: 'Automerge auto-cherry-picked pr'
           allowed-conclusions: success,skipped
 
       - name: is PRT check Passed ?
