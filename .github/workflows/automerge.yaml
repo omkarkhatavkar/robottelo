@@ -43,41 +43,62 @@ jobs:
         run: |
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 60
           
-      - name: is PRT check Passed ?
-        run: |
-          counter=0
-          STATUSES=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r 'length')
-          if [ $STATUSES == 0 ]; then
-              echo "::error PRT failed to start ! Stopping." && exit 1
-          else
-              CONTEXT=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].context')
-              COMMIT_STATUS=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].state')
-              if [ "$CONTEXT" == "Robottelo-Runner" ]; then
-                  until [ "$COMMIT_STATUS" == "success" ] || [ "$COMMIT_STATUS" == "failure" ] || [ $counter -gt 10 ]; do
-                      echo "Waiting for PRT to complete....."
-                      sleep 300
-                      COMMIT_STATUS=$(curl -s https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}  | jq -r '.[0].state')
-                      echo "Robottelo-Runner : $COMMIT_STATUS"
-                  done
-              else
-                  echo "::error Failed to get Robottelo-Runner status " && exit 1 
-              fi
-              if [ "$COMMIT_STATUS" == "success" ]; then
-                  echo "PRT Passed Successfully!"
-              else
-                  echo "::error PRT failed/timeout!" & exit 1
-              fi
-          fi
-
-      - name: 'Wait for status checks to Pass'
+      - name: Wait for other status checks to Pass
         id: waitforstatuschecks
         uses: lewagon/wait-on-check-action@v1.2.0
         with:
           ref: ${{ github.head_ref }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.CHERRYPICK_PAT }}
           wait-interval: 60
-          running-workflow-name: 'Wait for status checks to Pass'
+          running-workflow-name: 'Wait for other status checks to Pass'
           allowed-conclusions: success,skipped
+
+      - name: is PRT check Passed ?
+        run: |
+          api_endpoint="https://api.github.com/repos/${{github.repository}}/statuses/${{ github.head_ref }}"
+
+          function get_status() {
+            curl -s "$api_endpoint"  | jq -r '.[0].state'
+          }
+
+          function get_context() {
+            curl -s "$api_endpoint" | jq -r '.[0].context'
+          }
+
+          statuses_length=$(curl -s $api_endpoint | jq 'length')
+          if [ $statuses_length -eq 0 ]; then
+              echo "PRT failed to start ! Stopping."
+              exit 1
+          fi
+
+          status=$(get_status)
+          context=$(get_context)
+
+          if [ "$context" != "Robottelo-Runner" ]; then
+            echo "::error Failed to get Robottelo-Runner status"
+            exit 1
+          fi
+
+          counter=0
+          echo "Waiting for PRT to complete....."
+          while [ "$status" != "success" ] && [ "$status" != "failure" ]; do
+            if [ $counter -gt 10 ]; then
+              echo "PRT failed/timeout"
+              exit 1
+            fi
+            sleep 300
+            status=$(get_status)
+            echo "Robottelo-Runner : $status"
+            counter=$((counter+1))
+          done
+
+          if [ "$status" == "success" ]; then
+            echo "PRT Passed Successfully!"
+          else
+            echo "Robottelo-Runner : $status"
+            echo "::error PRT failed"
+            exit 1
+          fi
   
       - id: automerge
         name: Auto merge of cherry-picked PRs.
