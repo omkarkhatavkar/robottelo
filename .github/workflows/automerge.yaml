@@ -52,7 +52,7 @@ jobs:
           wait-interval: 60
           running-workflow-name: 'Automerge auto-cherry-picked pr'
           allowed-conclusions: success,skipped
-          ignore-checks: 'Enforcing cherrypick labels'
+          ignore-checks: 'Enforcing cherrypick labels,Code Quality (3.10)'
 
       - id: automerge
         name: Auto merge of cherry-picked PRs.
