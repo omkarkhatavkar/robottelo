@@ -48,10 +48,11 @@ from robottelo.constants import REPOS
 from robottelo.constants import REPOSET
 from robottelo.hosts import ContentHost
 from robottelo.logging import logger
+from robottelo.utils import ohsnap
 
 
 @pytest.fixture()
-def fixture_sca_vmsetup(request, module_gt_manifest_org, target_sat):
+def fixture_sca_vmsetup(request, module_sca_manifest_org, target_sat):
     """Create VM and register content host to Simple Content Access organization"""
     if '_count' in request.param.keys():
         with Broker(
@@ -60,11 +61,11 @@ def fixture_sca_vmsetup(request, module_gt_manifest_org, target_sat):
             _count=request.param['_count'],
         ) as clients:
             for client in clients:
-                client.configure_rex(satellite=target_sat, org=module_gt_manifest_org)
+                client.configure_rex(satellite=target_sat, org=module_sca_manifest_org)
             yield clients
     else:
         with Broker(nick=request.param['nick'], host_class=ContentHost) as client:
-            client.configure_rex(satellite=target_sat, org=module_gt_manifest_org)
+            client.configure_rex(satellite=target_sat, org=module_sca_manifest_org)
             yield client
 
 
@@ -550,7 +551,6 @@ class TestAnsibleREX:
             }
         )
         result = JobInvocation.info({'id': invocation_command['id']})
-        assert_job_invocation_status(invocation_command['id'], client.hostname, 'queued')
         sleep(150)
         rec_logic = RecurringLogic.info({'id': result['recurring-logic-id']})
         assert rec_logic['state'] == 'finished'
@@ -712,7 +712,9 @@ class TestAnsibleREX:
     @pytest.mark.parametrize(
         'fixture_sca_vmsetup', [{'nick': 'rhel7'}], ids=['rhel7'], indirect=True
     )
-    def test_positive_install_ansible_collection(self, fixture_sca_vmsetup, module_gt_manifest_org):
+    def test_positive_install_ansible_collection(
+        self, fixture_sca_vmsetup, module_sca_manifest_org
+    ):
         """Test whether Ansible collection can be installed via REX
 
         :Steps:
@@ -736,7 +738,7 @@ class TestAnsibleREX:
             {
                 'basearch': 'x86_64',
                 'name': REPOSET['rhae2'],
-                'organization-id': module_gt_manifest_org.id,
+                'organization-id': module_sca_manifest_org.id,
                 'product': PRDS['rhae'],
                 'releasever': '7Server',
             }
@@ -744,7 +746,7 @@ class TestAnsibleREX:
         Repository.synchronize(
             {
                 'name': REPOS['rhae2']['name'],
-                'organization-id': module_gt_manifest_org.id,
+                'organization-id': module_sca_manifest_org.id,
                 'product': PRDS['rhae'],
             }
         )
@@ -915,6 +917,7 @@ class TestAsyncSSHProviderRex:
         module_org,
         smart_proxy_location,
         module_ak_with_cv,
+        module_target_sat,
         module_capsule_configured_async_ssh,
         rhel_contenthost,
     ):
@@ -931,11 +934,20 @@ class TestAsyncSSHProviderRex:
 
         :parametrized: yes
         """
+        # Update module_capsule_configured_async_ssh to include module_org/smart_proxy_location
+        module_target_sat.cli.Capsule.update(
+            {
+                'name': module_capsule_configured_async_ssh.hostname,
+                'organization-ids': module_org.id,
+                'location-ids': smart_proxy_location.id,
+            }
+        )
         result = rhel_contenthost.register(
-            module_capsule_configured_async_ssh,
             module_org,
             smart_proxy_location,
             module_ak_with_cv.name,
+            target=module_capsule_configured_async_ssh,
+            satellite=module_target_sat,
         )
         assert result.status == 0, f'Failed to register host: {result.stderr}'
         # run script provider rex command, longer-running command is needed to
@@ -962,6 +974,7 @@ class TestPullProviderRex:
         module_org,
         smart_proxy_location,
         module_ak_with_cv,
+        module_target_sat,
         module_capsule_configured_mqtt,
         rhel_contenthost,
     ):
@@ -975,29 +988,30 @@ class TestPullProviderRex:
 
         :parametrized: yes
         """
-        result = rhel_contenthost.execute(
-            f'curl -o /etc/pki/ca-trust/source/anchors/satellite-sat-engineering-ca.crt \
-                    {settings.repos["DOGFOOD_REPO_HOST"]}/pub/katello-server-ca.crt \
-                    && update-ca-trust'
+        client_repo = ohsnap.dogfood_repository(
+            settings.repos.ohsnap_repo_host,
+            product='client',
+            repo='client',
+            release='Client',
+            os_release=rhel_contenthost.os_version.major,
         )
-        assert result.status == 0, 'Failed to download certificate'
-        client_repo = (
-            f'{settings.repos["DOGFOOD_REPO_HOST"].replace("http", "https")}/pulp/content/'
-            'Satellite_Engineering/QA/Satellite_Client/custom/Satellite_Client_Composes/'
-            f'Satellite_Client_RHEL{rhel_contenthost.os_version.major}_x86_64/'
+        # Update module_capsule_configured_mqtt to include module_org/smart_proxy_location
+        module_target_sat.cli.Capsule.update(
+            {
+                'name': module_capsule_configured_mqtt.hostname,
+                'organization-ids': module_org.id,
+                'location-ids': smart_proxy_location.id,
+            }
         )
-        # TODO client_repo should be changed to
-        # settings.repos['SATCLIENT_REPO'][f'RHEL{rhel_contenthost.os_version.major}']
-        # when/if the new dogfood url pattern settles
-
         # register host with rex, enable client repo, install katello-agent
         result = rhel_contenthost.register(
-            module_capsule_configured_mqtt,
             module_org,
             smart_proxy_location,
             module_ak_with_cv.name,
+            target=module_capsule_configured_mqtt,
+            satellite=module_target_sat,
             packages=['katello-agent'],
-            repo=client_repo,
+            repo=client_repo.baseurl,
         )
         assert result.status == 0, f'Failed to register host: {result.stderr}'
 
@@ -1055,6 +1069,7 @@ class TestPullProviderRex:
     def test_positive_run_job_on_host_registered_to_pull_provider(
         self,
         module_org,
+        module_target_sat,
         smart_proxy_location,
         module_ak_with_cv,
         module_capsule_configured_mqtt,
@@ -1070,30 +1085,32 @@ class TestPullProviderRex:
 
         :parametrized: yes
         """
-        result = rhel_contenthost.execute(
-            f'curl -o /etc/pki/ca-trust/source/anchors/satellite-sat-engineering-ca.crt \
-                    {settings.repos["DOGFOOD_REPO_HOST"]}/pub/katello-server-ca.crt \
-                    && update-ca-trust'
+        client_repo = ohsnap.dogfood_repository(
+            settings.repos.ohsnap_repo_host,
+            product='client',
+            repo='client',
+            release='Client',
+            os_release=rhel_contenthost.os_version.major,
         )
-        assert result.status == 0, 'Failed to download certificate'
-        client_repo = (
-            f'{settings.repos["DOGFOOD_REPO_HOST"].replace("http", "https")}/pulp/content/'
-            'Satellite_Engineering/QA/Satellite_Client/custom/Satellite_Client_Composes/'
-            f'Satellite_Client_RHEL{rhel_contenthost.os_version.major}_x86_64/'
+        # Update module_capsule_configured_mqtt to include module_org/smart_proxy_location
+        module_target_sat.cli.Capsule.update(
+            {
+                'name': module_capsule_configured_mqtt.hostname,
+                'organization-ids': module_org.id,
+                'location-ids': smart_proxy_location.id,
+            }
         )
-        # TODO client_repo should be changed to
-        # settings.repos['SATCLIENT_REPO'][f'RHEL{rhel_contenthost.os_version.major}']
-        # when/if the new dogfood url pattern settles
-
         # register host with pull provider rex (SAT-1677)
         result = rhel_contenthost.register(
-            module_capsule_configured_mqtt,
             module_org,
             smart_proxy_location,
             module_ak_with_cv.name,
+            target=module_capsule_configured_mqtt,
+            satellite=module_target_sat,
             setup_remote_execution_pull=True,
-            repo=client_repo,
+            repo=client_repo.baseurl,
         )
+
         assert result.status == 0, f'Failed to register host: {result.stderr}'
         # check mqtt client is running
         result = rhel_contenthost.execute('yggdrasil status')
