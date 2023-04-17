@@ -47,6 +47,13 @@ jobs:
           wait-interval: 60
           running-workflow-name: 'Automerge auto-cherry-picked pr'
           allowed-conclusions: success,skipped
+      
+      - name: is PRT check Passed using waitforstatuschecks?
+        id: waitforstatuschecksusingomkar
+        uses: omkarkhatavkar/waitforstatuschecks@main
+        with:
+          ref: ${{ github.head_ref }}
+          context: "Robottelo-Runner"
 
       - name: is PRT check Passed ?
         run: |
