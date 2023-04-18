@@ -33,21 +33,7 @@ jobs:
         if: steps.find-prt-comment.outputs.comment-body == ''
         run: |
           echo "::error PRT comment not added the PR"
-
-      - name: Wait for PRT checks to get initiated
-        run: |
-          echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 600
-
-      - name: Wait for other status checks to Pass
-        id: waitforstatuschecks
-        uses: lewagon/wait-on-check-action@v1.3.1
-        with:
-          ref: ${{ github.head_ref }}
-          repo-token: ${{ secrets.CHERRYPICK_PAT }}
-          wait-interval: 60
-          running-workflow-name: 'Automerge auto-cherry-picked pr'
-          allowed-conclusions: success,skipped
-      
+    
       - name: is PRT check Passed using waitforstatuschecks?
         id: waitforstatuschecksusingomkar
         uses: omkarkhatavkar/waitforstatuschecks@main
