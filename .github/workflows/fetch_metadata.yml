@@ -22,14 +22,25 @@ jobs:
 #          echo "Dependency names: ${{ steps.metadata.outputs.dependency-names }}"
 #          echo "Dependency type: ${{ steps.metadata.outputs.dependency-type }}"
 #          echo "Update type: ${{ steps.metadata.outputs.update-type }}"
-      
-      - name: fetch the tests from the yaml
-        uses: CumulusDS/get-yaml-paths-action@v1.0.1
-        id: yaml
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-          file: requirement-tests.yml
-          tests: '"${{ steps.metadata.outputs.dependency-names }}"'
+          fetch-depth: 0
+
+#      - name: fetch the tests from the yaml
+#        uses: CumulusDS/get-yaml-paths-action@v1.0.1
+#        id: yaml
+#        with:
+#          file: tests.yml
+#          #tests: '"${{ steps.metadata.outputs.dependency-names }}"'
+#          tests: '"pre-commit"'
+
+      - name: Get pytest tests
+        id: yaml
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq e ".pre-commit" tests.yaml
           
       - name: Print Pytest Comment 
         run: |
-          echo "Dependency names: ${{ steps.yaml.outputs.tests }}"
+          echo "Dependency names: ${{ steps.yaml.outputs.result }}"
