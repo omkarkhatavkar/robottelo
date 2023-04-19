@@ -1,2 +1,0 @@
-python-box: "trigger: test-robottelo"
-pre-commit: "trigger: test-robottelo"
