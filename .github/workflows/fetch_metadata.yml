@@ -27,7 +27,7 @@ jobs:
         uses: CumulusDS/get-yaml-paths-action@v1.0.1
         id: yaml
         with:
-          file: .github/workflows/requirement-tests.yml
+          file: ./.github/workflows/requirement-tests.yml
           #tests: '"${{ steps.metadata.outputs.dependency-names }}"'
           #tests: '"pre-commit"'
           
