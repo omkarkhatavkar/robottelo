@@ -8,7 +8,7 @@
 
 :CaseComponent: API
 
-:Assignee: gtalreja
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -28,9 +28,6 @@ from nailgun import client
 from nailgun import entities
 
 from robottelo import constants
-from robottelo import manifests
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import upload_manifest
 from robottelo.config import get_credentials
 from robottelo.config import get_url
 from robottelo.config import setting_is_set
@@ -38,6 +35,7 @@ from robottelo.config import settings
 from robottelo.config import user_nailgun_config
 from robottelo.constants.repos import CUSTOM_RPM_REPO
 from robottelo.utils.issue_handlers import is_open
+from robottelo.utils.manifest import clone
 
 
 API_PATHS = {
@@ -325,7 +323,7 @@ API_PATHS = {
         '/api/v2/discovery_rules/:id',
         '/api/v2/discovery_rules/:id',
     ),
-    'disks': ('/bootdisk/api', '/bootdisk/api/generic', '/bootdisk/api/hosts/:host_id'),
+    'disks': ('/api/bootdisk', '/api/bootdisk/generic', '/api/bootdisk/hosts/:host_id'),
     'docker_manifests': (
         '/katello/api/docker_manifests/:id',
         '/katello/api/docker_manifests/compare',
@@ -457,6 +455,8 @@ API_PATHS = {
         '/api/hosts/:id/assign_ansible_roles',
         '/api/hosts/:host_id/host_collections',
         '/api/hosts/:id/policies_enc',
+        '/api/hosts/:id/templates',
+        '/api/hosts/:id/inherited_parameters',
     ),
     'hosts_bulk_actions': (
         '/api/hosts/bulk/add_host_collections',
@@ -770,6 +770,7 @@ API_PATHS = {
         '/katello/api/repositories/:id/verify_checksum',
         '/katello/api/content_types',
         '/katello/api/repositories/:id/reclaim_space',
+        '/katello/api/repositories/compare',
     ),
     'repository_sets': (
         '/katello/api/repository_sets',
@@ -818,7 +819,7 @@ API_PATHS = {
         '/api/users/:user_id/ssh_keys/:id',
         '/api/users/:user_id/ssh_keys/:id',
     ),
-    'subnet_disks': ('/bootdisk/api', '/bootdisk/api/subnets/:subnet_id'),
+    'subnet_disks': ('/api/bootdisk', '/api/bootdisk/subnets/:subnet_id'),
     'subnets': (
         '/api/subnets',
         '/api/subnets',
@@ -900,6 +901,7 @@ API_PATHS = {
         '/api/users',
         '/api/users/:id',
         '/api/users/:id',
+        '/api/users/extlogin',
     ),
     'webhooks': (
         '/api/webhooks',
@@ -1050,6 +1052,7 @@ class TestEndToEnd:
 
     @pytest.mark.skip_if_not_set('libvirt')
     @pytest.mark.tier4
+    @pytest.mark.e2e
     @pytest.mark.upgrade
     @pytest.mark.skipif(
         (not settings.robottelo.REPOS_HOSTING_URL), reason='Missing repos_hosting_url'
@@ -1096,8 +1099,8 @@ class TestEndToEnd:
 
         # step 2.2: Clone and upload manifest
         if fake_manifest_is_set:
-            with manifests.clone() as manifest:
-                upload_manifest(org.id, manifest.content)
+            with clone() as manifest:
+                target_sat.upload_manifest(org.id, manifest.content)
 
         # step 2.3: Create a new lifecycle environment
         le1 = target_sat.api.LifecycleEnvironment(server_config=user_cfg, organization=org).create()
@@ -1115,7 +1118,7 @@ class TestEndToEnd:
         # step 2.6: Enable a Red Hat repository
         if fake_manifest_is_set:
             rhel_repo = target_sat.api.Repository(
-                id=enable_rhrepo_and_fetchid(
+                id=target_sat.api_factory.enable_rhrepo_and_fetchid(
                     basearch='x86_64',
                     org_id=org.id,
                     product=constants.PRDS['rhel'],

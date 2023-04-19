@@ -9,7 +9,9 @@ from broker import Broker
 
 from robottelo import constants
 from robottelo.config import settings
+from robottelo.hosts import Capsule
 from robottelo.hosts import ContentHost
+from robottelo.hosts import Satellite
 
 
 def host_conf(request):
@@ -28,10 +30,10 @@ def host_conf(request):
             request.node.get_closest_marker('no_containers'),
         ]
     ):
-        deploy_kwargs = settings.content_host.get(_rhelver).get('container', {})
+        deploy_kwargs = settings.content_host.get(_rhelver).to_dict().get('container', {})
     # if we're not using containers or a container isn't available, use a VM
     if not deploy_kwargs:
-        deploy_kwargs = settings.content_host.get(_rhelver).get('vm', {})
+        deploy_kwargs = settings.content_host.get(_rhelver).to_dict().get('vm', {})
     conf.update(deploy_kwargs)
     return conf
 
@@ -143,10 +145,9 @@ def cockpit_host(class_target_sat, class_org, rhel_contenthost):
 def rex_contenthost(request, module_org, target_sat):
     request.param['no_containers'] = True
     with Broker(**host_conf(request), host_class=ContentHost) as host:
-        # Register content host to Satellite and install katello-host-tools on the host
+        # Register content host to Satellite
         repo = settings.repos['SATCLIENT_REPO'][f'RHEL{host.os_version.major}']
         target_sat.register_host_custom_repo(module_org, host, [repo])
-        host.install_katello_host_tools()
         # Enable remote execution on the host
         host.add_rex_key(satellite=target_sat)
         yield host
@@ -214,9 +215,80 @@ def oracle_host(request, version):
 
 @pytest.fixture
 def sat_ready_rhel(request):
-    request.param = {"rhel_version": request.param, "no_containers": True}
+    deploy_args = {
+        'deploy_rhel_version': request.param,
+        'deploy_flavor': 'satqe-ssd.standard.std',
+        'promtail_config_template_file': 'config_sat.j2',
+        'workflow': 'deploy-rhel',
+    }
+    # if 'deploy_rhel_version' is not set, let's default to RHEL 8
+    deploy_args['deploy_rhel_version'] = deploy_args.get('deploy_rhel_version', '8')
+    deploy_args['workflow'] = 'deploy-rhel'
+    with Broker(**deploy_args, host_class=Satellite) as host:
+        yield host
+
+
+@pytest.fixture
+def cap_ready_rhel():
+    rhel8 = settings.content_host.rhel8.vm
+    deploy_args = {
+        'deploy_rhel_version': rhel8.deploy_rhel_version,
+        'deploy_flavor': 'satqe-ssd.standard.std',
+        'workflow': rhel8.workflow,
+    }
+    with Broker(**deploy_args, host_class=Capsule) as host:
+        yield host
+
+
+@pytest.fixture(scope='module', params=[{'rhel_version': 8, 'no_containers': True}])
+def external_puppet_server(request):
     deploy_args = host_conf(request)
-    deploy_args['target_cores'] = 6
-    deploy_args['target_memory'] = '20GiB'
+    deploy_args['target_cores'] = 2
+    deploy_args['target_memory'] = '4GiB'
     with Broker(**deploy_args, host_class=ContentHost) as host:
+        host.register_to_cdn()
+        # Install puppet packages
+        assert (
+            host.execute(
+                'dnf install -y https://yum.puppet.com/puppet-release-el-8.noarch.rpm'
+            ).status
+            == 0
+        )
+        assert host.execute('dnf install -y puppetserver').status == 0
+        # Source puppet profiles
+        host.execute('. /etc/profile.d/puppet-agent.sh')
+        # Setup Puppet Server CA
+        assert host.execute('puppetserver ca setup').status == 0
+        # Set puppet server as $HOSTNAME
+        assert host.execute('puppet config set server $HOSTNAME').status == 0
+        assert host.hostname in host.execute('puppet config print server').stdout
+        # Enable service and setup firewall for puppetserver
+        assert host.execute('systemctl enable --now puppetserver').status == 0
+        assert host.execute('firewall-cmd --permanent --add-port="8140/tcp"').status == 0
+        assert host.execute('firewall-cmd --reload').status == 0
+        # Install theforeman/motd puppet module
+        puppet_prod_env = '/etc/puppetlabs/code/environments/production'
+        host.execute('puppet module install theforeman/motd')
+        host.execute(f'mkdir -p {puppet_prod_env}/manifests')
+        host.execute(f'echo "include motd" > {puppet_prod_env}/manifests/site.pp')
+
+        yield host
+
+
+@pytest.fixture(scope="module")
+def sat_upgrade_chost():
+    """A module-level fixture that provides a UBI_8 content host for upgrade scenario testing"""
+    return Broker(
+        container_host=settings.content_host.rhel8.container.container_host, host_class=ContentHost
+    ).checkout()
+
+
+@pytest.fixture
+def custom_host(request):
+    """A rhel content host that passes custom host config through request.param"""
+    deploy_args = request.param
+    # if 'deploy_rhel_version' is not set, let's default to RHEL 8
+    deploy_args['deploy_rhel_version'] = deploy_args.get('deploy_rhel_version', '8')
+    deploy_args['workflow'] = 'deploy-rhel'
+    with Broker(**deploy_args, host_class=Satellite) as host:
         yield host

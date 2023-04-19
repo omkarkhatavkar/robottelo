@@ -8,7 +8,7 @@
 
 :CaseComponent: RHCloud-Inventory
 
-:Assignee: addubey
+:Team: Platform
 
 :TestType: Functional
 
@@ -31,6 +31,7 @@ generate_report_jobs = 'ForemanInventoryUpload::Async::GenerateAllReportsJob'
 
 
 @pytest.mark.tier3
+@pytest.mark.e2e
 def test_positive_inventory_generate_upload_cli(
     organization_ak_setup, rhcloud_registered_hosts, rhcloud_sat_host
 ):
@@ -98,6 +99,7 @@ def test_positive_inventory_generate_upload_cli(
         assert hosts_count == local_file_data['slices_counts'][slice_name]
 
 
+@pytest.mark.e2e
 @pytest.mark.tier3
 def test_positive_inventory_recommendation_sync(
     organization_ak_setup,
@@ -141,6 +143,7 @@ def test_positive_inventory_recommendation_sync(
     assert result.stdout == 'Synchronized Insights hosts hits data\n'
 
 
+@pytest.mark.e2e
 @pytest.mark.tier3
 def test_positive_sync_inventory_status(
     organization_ak_setup,

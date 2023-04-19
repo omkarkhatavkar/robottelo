@@ -8,7 +8,7 @@
 
 :CaseComponent: Reporting
 
-:Assignee: lhellebr
+:team: Phoenix-subscriptions
 
 :TestType: Functional
 
@@ -27,11 +27,11 @@ import yaml
 from lxml import etree
 from nailgun import entities
 
-from robottelo import manifests
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import upload_manifest
 from robottelo.config import robottelo_tmp_dir
+from robottelo.config import settings
 from robottelo.constants import DEFAULT_SUBSCRIPTION_NAME
+from robottelo.constants import FAKE_0_CUSTOM_PACKAGE_NAME
+from robottelo.constants import FAKE_1_CUSTOM_PACKAGE
 from robottelo.constants import PRDS
 from robottelo.constants import REPOS
 from robottelo.constants import REPOSET
@@ -40,12 +40,11 @@ from robottelo.utils.datafactory import gen_string
 
 
 @pytest.fixture(scope='module')
-def setup_content(module_org):
-    with manifests.clone() as manifest:
-        upload_manifest(module_org.id, manifest.content)
-    rh_repo_id = enable_rhrepo_and_fetchid(
+def setup_content(module_entitlement_manifest_org, module_target_sat):
+    org = module_entitlement_manifest_org
+    rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch='x86_64',
-        org_id=module_org.id,
+        org_id=org.id,
         product=PRDS['rhel'],
         repo=REPOS['rhst7']['name'],
         reposet=REPOSET['rhst7'],
@@ -53,27 +52,27 @@ def setup_content(module_org):
     )
     rh_repo = entities.Repository(id=rh_repo_id).read()
     rh_repo.sync()
-    custom_product = entities.Product(organization=module_org).create()
+    custom_product = entities.Product(organization=org).create()
     custom_repo = entities.Repository(
         name=gen_string('alphanumeric').upper(), product=custom_product
     ).create()
     custom_repo.sync()
-    lce = entities.LifecycleEnvironment(organization=module_org).create()
+    lce = entities.LifecycleEnvironment(organization=org).create()
     cv = entities.ContentView(
-        organization=module_org,
+        organization=org,
         repository=[rh_repo_id, custom_repo.id],
     ).create()
     cv.publish()
     cvv = cv.read().version[0].read()
     cvv.promote(data={'environment_ids': lce.id})
     ak = entities.ActivationKey(
-        content_view=cv, organization=module_org, environment=lce, auto_attach=True
+        content_view=cv, organization=org, environment=lce, auto_attach=True
     ).create()
-    subscription = entities.Subscription(organization=module_org).search(
+    subscription = entities.Subscription(organization=org).search(
         query={'search': f'name="{DEFAULT_SUBSCRIPTION_NAME}"'}
     )[0]
     ak.add_subscriptions(data={'quantity': 1, 'subscription_id': subscription.id})
-    return module_org, ak
+    return org, ak, cv, lce
 
 
 @pytest.mark.tier3
@@ -403,6 +402,8 @@ def test_positive_schedule_generation_and_get_mail(
                       The result is compressed.
     :CaseImportance: High
     """
+    # make sure postfix daemon is running
+    target_sat.execute('systemctl start postfix')
     # generate Subscriptions report
     with session:
         session.reporttemplate.schedule(
@@ -564,3 +565,55 @@ def test_positive_gen_entitlements_reports_multiple_formats(
             tree_result = etree.tostring(tree.getroot(), pretty_print=True, method='html').decode()
         assert client.hostname in tree_result
         assert DEFAULT_SUBSCRIPTION_NAME in tree_result
+
+
+@pytest.mark.rhel_ver_list([7, 8, 9])
+@pytest.mark.tier3
+def test_positive_generate_all_installed_packages_report(
+    session, setup_content, rhel_contenthost, target_sat
+):
+    """Generate an report using the 'Host - All Installed Packages' Report template
+
+    :id: 63ab3246-0fc5-48b3-ba56-7becfa0c5a7b
+
+    :setup: Installed Satellite with Organization, Activation key,
+            Content View, Content Host, and custom product with installed packages
+
+    :steps:
+        1. Monitor -> Report Templates
+        2. Host - All Installed Packages -> Generate
+        3. Select Date, Output format, and Hosts filter
+
+    :expectedresults: A report is generated containing all installed package
+            information for a host
+
+    :BZ: 1826648
+
+    :customerscenario: true
+    """
+    org, ak, cv, lce = setup_content
+    target_sat.cli_factory.setup_org_for_a_custom_repo(
+        {
+            'url': settings.repos.yum_6.url,
+            'organization-id': org.id,
+            'content-view-id': cv.id,
+            'lifecycle-environment-id': lce.id,
+            'activationkey-id': ak.id,
+        }
+    )
+    client = rhel_contenthost
+    client.install_katello_ca(target_sat)
+    client.register_contenthost(org.label, ak.name)
+    assert client.subscribed
+    client.execute(f'yum -y install {FAKE_0_CUSTOM_PACKAGE_NAME} {FAKE_1_CUSTOM_PACKAGE}')
+    with session:
+        session.location.select('Default Location')
+        result_html = session.reporttemplate.generate(
+            'Host - All Installed Packages', values={'output_format': 'HTML'}
+        )
+    with open(result_html) as html_file:
+        parser = etree.HTMLParser()
+        tree = etree.parse(html_file, parser)
+        tree_result = etree.tostring(tree.getroot(), pretty_print=True, method='html').decode()
+    assert client.hostname in tree_result
+    assert FAKE_1_CUSTOM_PACKAGE in tree_result

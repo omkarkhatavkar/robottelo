@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: ['3.9', '3.10', '3.11']
     steps:
       - name: Checkout Robottelo
         uses: actions/checkout@v3
@@ -56,6 +56,9 @@ jobs:
           pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m pre_upgrade tests/upgrades/
           pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m post_upgrade tests/upgrades/
 
+      - name: Run Robottelo's Tests
+        run: pytest -sv tests/robottelo/
+
       - name: Make Docs
         run: |
           make test-docstrings
@@ -64,13 +67,3 @@ jobs:
       - name: Analysis (git diff)
         if: failure()
         run: git diff
-
-  # This needed for to create the gh issue in case of failed auto0-cherry-pick
-  add-assignees:
-    name: Add author to assignee
-    if: "!contains(github.event.pull_request.labels.*.name, 'Auto_Cherry_Picked')"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: kentaro-m/auto-assign-action@v1.2.4
-        with:
-          configuration-path: '.github/auto_assign.yml'

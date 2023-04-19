@@ -8,7 +8,7 @@
 
 :CaseComponent: ContentCredentials
 
-:Assignee: spusater
+:team: Phoenix-content
 
 :TestType: Functional
 

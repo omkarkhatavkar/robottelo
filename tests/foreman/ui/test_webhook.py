@@ -6,9 +6,9 @@
 
 :CaseLevel: Component
 
-:CaseComponent: Webhooks
+:CaseComponent: HooksandWebhooks
 
-:Assignee: gsulliva
+:Team: Endeavour
 
 :TestType: Functional
 

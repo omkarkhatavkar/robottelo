@@ -3,10 +3,8 @@ import socket
 
 import pytest
 from box import Box
-from broker import Broker
 from nailgun import entities
 
-from robottelo.api.utils import update_rhsso_settings_in_satellite
 from robottelo.cli.base import CLIReturnCodeError
 from robottelo.config import settings
 from robottelo.constants import AUDIENCE_MAPPER
@@ -17,12 +15,18 @@ from robottelo.constants import HAMMER_SESSIONS
 from robottelo.constants import LDAP_ATTR
 from robottelo.constants import LDAP_SERVER_TYPE
 from robottelo.hosts import ContentHost
-from robottelo.rhsso_utils import create_mapper
-from robottelo.rhsso_utils import get_rhsso_client_id
-from robottelo.rhsso_utils import set_the_redirect_uri
+from robottelo.hosts import SSOHost
 from robottelo.utils.datafactory import gen_string
 from robottelo.utils.installer import InstallerCommand
 from robottelo.utils.issue_handlers import is_open
+
+LOGGEDOUT = 'Logged out.'
+
+
+@pytest.fixture(scope='module')
+def default_sso_host(module_target_sat):
+    """Returns default sso host"""
+    return SSOHost(module_target_sat)
 
 
 @pytest.fixture()
@@ -287,7 +291,8 @@ def enroll_configure_rhsso_external_auth(module_target_sat):
     )
     module_target_sat.execute('update-ca-trust')
     module_target_sat.execute(
-        f'echo {settings.rhsso.rhsso_password} | keycloak-httpd-client-install --app-name foreman-openidc \
+        f'echo {settings.rhsso.rhsso_password} | keycloak-httpd-client-install \
+                --app-name foreman-openidc \
                 --keycloak-server-url {settings.rhsso.host_url} \
                 --keycloak-admin-username "admin" \
                 --keycloak-realm "{settings.rhsso.realm}" \
@@ -299,7 +304,6 @@ def enroll_configure_rhsso_external_auth(module_target_sat):
             r"sed -i -e '$aapache::default_mods:\n  - authn_core' "
             "/etc/foreman-installer/custom-hiera.yaml"
         )
-
     module_target_sat.execute(
         f'satellite-installer --foreman-keycloak true '
         f"--foreman-keycloak-app-name 'foreman-openidc' "
@@ -310,16 +314,18 @@ def enroll_configure_rhsso_external_auth(module_target_sat):
 
 
 @pytest.fixture(scope='module')
-def enable_external_auth_rhsso(enroll_configure_rhsso_external_auth, module_target_sat):
+def enable_external_auth_rhsso(
+    enroll_configure_rhsso_external_auth, default_sso_host, module_target_sat
+):
     """register the satellite with RH-SSO Server for single sign-on"""
-    client_id = get_rhsso_client_id(module_target_sat)
-    create_mapper(GROUP_MEMBERSHIP_MAPPER, client_id)
+    client_id = default_sso_host.get_rhsso_client_id()
+    default_sso_host.create_mapper(GROUP_MEMBERSHIP_MAPPER, client_id)
     audience_mapper = copy.deepcopy(AUDIENCE_MAPPER)
     audience_mapper['config']['included.client.audience'] = audience_mapper['config'][
         'included.client.audience'
     ].format(rhsso_host=module_target_sat.hostname)
-    create_mapper(audience_mapper, client_id)
-    set_the_redirect_uri(module_target_sat)
+    default_sso_host.create_mapper(audience_mapper, client_id)
+    default_sso_host.set_the_redirect_uri()
 
 
 def enroll_idm_and_configure_external_auth(sat):
@@ -379,30 +385,48 @@ def func_enroll_idm_and_configure_external_auth(target_sat):
 
 
 @pytest.fixture(scope='module')
-def configure_realm(session_target_sat):
+def configure_realm(module_target_sat):
     """Configure realm"""
     realm = settings.upgrade.vm_domain.upper()
-    session_target_sat.execute(f'curl -o /root/freeipa.keytab {settings.ipa.keytab_url}')
-    session_target_sat.execute('mv /root/freeipa.keytab /etc/foreman-proxy')
-    session_target_sat.execute(
-        'chown foreman-proxy:foreman-proxy /etc/foreman-proxy/freeipa.keytab'
-    )
-    session_target_sat.execute(
+    module_target_sat.execute(f'curl -o /root/freeipa.keytab {settings.ipa.keytab_url}')
+    module_target_sat.execute('mv /root/freeipa.keytab /etc/foreman-proxy')
+    module_target_sat.execute('chown foreman-proxy:foreman-proxy /etc/foreman-proxy/freeipa.keytab')
+    module_target_sat.execute(
         'satellite-installer --foreman-proxy-realm true '
         f'--foreman-proxy-realm-principal realm-proxy@{realm} '
         f'--foreman-proxy-dhcp-nameservers {socket.gethostbyname(settings.ipa.hostname)}'
     )
-    session_target_sat.execute('cp /etc/ipa/ca.crt /etc/pki/ca-trust/source/anchors/ipa.crt')
-    session_target_sat.execute('update-ca-trust enable ; update-ca-trust')
-    session_target_sat.execute('service foreman-proxy restart')
+    module_target_sat.execute('cp /etc/ipa/ca.crt /etc/pki/ca-trust/source/anchors/ipa.crt')
+    module_target_sat.execute('update-ca-trust enable ; update-ca-trust')
+    module_target_sat.execute('service foreman-proxy restart')
 
 
 @pytest.fixture(scope="module")
 def rhsso_setting_setup(module_target_sat):
     """Update the RHSSO setting and revert it in cleanup"""
-    update_rhsso_settings_in_satellite(sat=module_target_sat)
+    rhhso_settings = {
+        'authorize_login_delegation': True,
+        'authorize_login_delegation_auth_source_user_autocreate': 'External',
+        'login_delegation_logout_url': f'https://{settings.server.hostname}/users/extlogout',
+        'oidc_algorithm': 'RS256',
+        'oidc_audience': [f'{settings.server.hostname}-foreman-openidc'],
+        'oidc_issuer': f'{settings.rhsso.host_url}/auth/realms/{settings.rhsso.realm}',
+        'oidc_jwks_url': f'{settings.rhsso.host_url}/auth/realms'
+        f'/{settings.rhsso.realm}/protocol/openid-connect/certs',
+    }
+    for setting_name, setting_value in rhhso_settings.items():
+        # replace entietes field with targetsat.api
+        setting_entity = module_target_sat.api.Setting().search(
+            query={'search': f'name={setting_name}'}
+        )[0]
+        setting_entity.value = setting_value
+        setting_entity.update({'value'})
     yield
-    update_rhsso_settings_in_satellite(revert=True, sat=module_target_sat)
+    setting_entity = module_target_sat.api.Setting().search(
+        query={'search': 'name=authorize_login_delegation'}
+    )[0]
+    setting_entity.value = False
+    setting_entity.update({'value'})
 
 
 @pytest.fixture(scope="module")
@@ -517,13 +541,49 @@ def func_enroll_ad_and_configure_external_auth(request, ad_data, target_sat):
 
 @pytest.mark.external_auth
 @pytest.fixture
-def configure_hammer_negotiate(parametrized_enrolled_sat):
-    """Configures hammer to use sessions and negotitate auth."""
-    parametrized_enrolled_sat.execute(f'mv {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
-    cfg = ':foreman:\n  :default_auth_type: Negotiate_Auth\n  :use_sessions: true\n'
-    parametrized_enrolled_sat.execute(f"echo '{cfg}' > {HAMMER_CONFIG}")
+def configure_hammer_no_creds(parametrized_enrolled_sat):
+    """Configures hammer to use sessions and negotiate auth."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:username.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"sed -i '/:password.*/d' {HAMMER_CONFIG}")
     yield
     parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture
+def configure_hammer_negotiate(parametrized_enrolled_sat, configure_hammer_no_creds):
+    """Configures hammer to use sessions and negotiate auth."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:default_auth_type.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"sed -i '/:use_sessions.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"echo '  :use_sessions: true' >> {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(
+        f"echo '  :default_auth_type: Negotiate_Auth' >> {HAMMER_CONFIG}"
+    )
+    yield
+    parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture
+def configure_hammer_no_negotiate(parametrized_enrolled_sat):
+    """Configures hammer not to use automatic negotiation."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:default_auth_type.*/d' {HAMMER_CONFIG}")
+    yield
+    parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture(scope='function')
+def hammer_logout(parametrized_enrolled_sat):
+    """Logout in Hammer."""
+    result = parametrized_enrolled_sat.cli.Auth.logout()
+    assert result[0]['message'] == LOGGEDOUT
+    yield
+    result = parametrized_enrolled_sat.cli.Auth.logout()
+    assert result[0]['message'] == LOGGEDOUT
 
 
 @pytest.fixture
@@ -536,22 +596,33 @@ def sessions_tear_down(parametrized_enrolled_sat):
     )
 
 
-@pytest.fixture(scope='module', params=['IDM', 'AD'])
-def parametrized_enrolled_sat(
+@pytest.fixture
+def configure_ipa_api(
     request,
-    satellite_factory,
-    ad_data,
+    parametrized_enrolled_sat,
+    enabled=True,
 ):
-    """Yields a Satellite enrolled into [IDM, AD] as parameter."""
-    new_sat = satellite_factory()
-    new_sat.register_to_cdn()
-    if 'IDM' in request.param:
-        enroll_idm_and_configure_external_auth(new_sat)
-        yield new_sat
-        disenroll_idm(new_sat)
-    else:
-        enroll_ad_and_configure_external_auth(request, ad_data, new_sat)
-        yield new_sat
-    new_sat.unregister()
-    new_sat.teardown()
-    Broker(hosts=[new_sat]).checkin()
+    """Enable Kerberos authentication in Hammer."""
+    if enabled:
+        # Normal ipa authentication needs to be enabled already
+        assert (
+            parametrized_enrolled_sat.execute(
+                'satellite-installer --help | grep foreman-ipa-authentication[^-] | grep true'
+            ).status
+            == 0
+        )
+    original_value = (
+        parametrized_enrolled_sat.execute(
+            'satellite-installer --help | grep foreman-ipa-authentication-api | grep true'
+        ).status
+        == 0
+    )
+    result = parametrized_enrolled_sat.install(
+        InstallerCommand(f'foreman-ipa-authentication-api {"true" if enabled else "false"}')
+    )
+    assert result.status == 0, 'Installer failed to enable IPA API authentication.'
+    yield
+    result = parametrized_enrolled_sat.install(
+        InstallerCommand(f'foreman-ipa-authentication-api {"true" if original_value else "false"}')
+    )
+    assert result.status == 0, 'Installer failed to reset IPA API authentication.'

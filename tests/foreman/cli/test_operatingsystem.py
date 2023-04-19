@@ -1,14 +1,14 @@
 """Test class for Operating System CLI
 
-:Requirement: Operatingsystem
+:Requirement: Provisioning
 
 :CaseAutomation: Automated
 
 :CaseLevel: Component
 
-:CaseComponent: ContentManagement
+:CaseComponent: Provisioning
 
-:Assignee: ltran
+:Team: Rocket
 
 :TestType: Functional
 

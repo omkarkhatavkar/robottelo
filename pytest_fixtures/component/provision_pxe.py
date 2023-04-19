@@ -1,5 +1,6 @@
 import ipaddress
 import os
+import re
 from tempfile import mkstemp
 
 import pytest
@@ -9,8 +10,6 @@ from fauxfactory import gen_string
 from packaging.version import Version
 
 from robottelo import constants
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import wait_for_tasks
 from robottelo.config import settings
 from robottelo.hosts import ContentHost
 
@@ -18,7 +17,7 @@ from robottelo.hosts import ContentHost
 @pytest.fixture(scope='module')
 def module_provisioning_capsule(module_target_sat, module_location):
     """Assigns the `module_location` to Satellite's internal capsule and returns it"""
-    capsule = module_target_sat.internal_capsule
+    capsule = module_target_sat.nailgun_smart_proxy
     capsule.location = [module_location]
     return capsule.update(['location'])
 
@@ -27,13 +26,8 @@ def module_provisioning_capsule(module_target_sat, module_location):
 def module_provisioning_rhel_content(
     request,
     module_provisioning_sat,
-    module_provisioning_capsule,
     module_sca_manifest_org,
     module_lce_library,
-    module_default_org_view,
-    module_location,
-    default_architecture,
-    default_partitiontable,
 ):
     """
     This fixture sets up kickstart repositories for a specific RHEL version
@@ -41,14 +35,33 @@ def module_provisioning_rhel_content(
     """
     sat = module_provisioning_sat.sat
     rhel_ver = request.param['rhel_version']
-    repo_names = [f'rhel{rhel_ver}']
-    if int(rhel_ver) > 7:
+    repo_names = []
+    if int(rhel_ver) <= 7:
+        repo_names.append(f'rhel{rhel_ver}')
+    else:
+        repo_names.append(f'rhel{rhel_ver}_bos')
         repo_names.append(f'rhel{rhel_ver}_aps')
-
     rh_repos = []
     tasks = []
+    rh_repo_id = ""
+    content_view = sat.api.ContentView(organization=module_sca_manifest_org).create()
+
+    # Custom Content for Client repo
+    custom_product = sat.api.Product(
+        organization=module_sca_manifest_org, name=f'rhel{rhel_ver}_{gen_string("alpha")}'
+    ).create()
+    client_repo = sat.api.Repository(
+        organization=module_sca_manifest_org,
+        product=custom_product,
+        content_type='yum',
+        url=settings.repos.SATCLIENT_REPO[f'rhel{rhel_ver}'],
+    ).create()
+    task = client_repo.sync(synchronous=False)
+    tasks.append(task)
+    content_view.repository = [client_repo]
+
     for name in repo_names:
-        rh_repo_id = enable_rhrepo_and_fetchid(
+        rh_kickstart_repo_id = sat.api_factory.enable_rhrepo_and_fetchid(
             basearch=constants.DEFAULT_ARCHITECTURE,
             org_id=module_sca_manifest_org.id,
             product=constants.REPOS['kickstart'][name]['product'],
@@ -56,20 +69,38 @@ def module_provisioning_rhel_content(
             reposet=constants.REPOS['kickstart'][name]['reposet'],
             releasever=constants.REPOS['kickstart'][name]['version'],
         )
+        # do not sync content repos for discovery based provisioning.
+        if not module_provisioning_sat.provisioning_type == 'discovery':
+            rh_repo_id = sat.api_factory.enable_rhrepo_and_fetchid(
+                basearch=constants.DEFAULT_ARCHITECTURE,
+                org_id=module_sca_manifest_org.id,
+                product=constants.REPOS[name]['product'],
+                repo=constants.REPOS[name]['name'],
+                reposet=constants.REPOS[name]['reposet'],
+                releasever=constants.REPOS[name]['releasever'],
+            )
+
         # Sync step because repo is not synced by default
-        rh_repo = sat.api.Repository(id=rh_repo_id).read()
-        task = rh_repo.sync(synchronous=False)
-        tasks.append(task)
-        rh_repos.append(rh_repo)
+        for repo_id in [rh_kickstart_repo_id, rh_repo_id]:
+            if repo_id:
+                rh_repo = sat.api.Repository(id=repo_id).read()
+                task = rh_repo.sync(synchronous=False)
+                tasks.append(task)
+                rh_repos.append(rh_repo)
+                content_view.repository.append(rh_repo)
+                content_view.update(['repository'])
     for task in tasks:
-        wait_for_tasks(
+        sat.wait_for_tasks(
             search_query=(f'id = {task["id"]}'),
             poll_timeout=2500,
         )
         task_status = sat.api.ForemanTask(id=task['id']).poll()
         assert task_status['result'] == 'success'
-
-    rhel_xy = Version(constants.REPOS['kickstart'][f'rhel{rhel_ver}']['version'])
+    rhel_xy = Version(
+        constants.REPOS['kickstart'][f'rhel{rhel_ver}']['version']
+        if rhel_ver == 7
+        else constants.REPOS['kickstart'][f'rhel{rhel_ver}_bos']['version']
+    )
     o_systems = sat.api.OperatingSystem().search(
         query={'search': f'family=Redhat and major={rhel_xy.major} and minor={rhel_xy.minor}'}
     )
@@ -77,51 +108,28 @@ def module_provisioning_rhel_content(
     os = o_systems[0].read()
     # return only the first kickstart repo - RHEL X KS or RHEL X BaseOS KS
     ksrepo = rh_repos[0]
-
+    publish = content_view.publish()
+    task_status = sat.wait_for_tasks(
+        search_query=(f'Actions::Katello::ContentView::Publish and id = {publish["id"]}'),
+        search_rate=15,
+        max_tries=10,
+    )
+    assert task_status[0].result == 'success'
+    content_view = sat.api.ContentView(
+        organization=module_sca_manifest_org, name=content_view.name
+    ).search()[0]
     ak = sat.api.ActivationKey(
         organization=module_sca_manifest_org,
-        content_view=module_default_org_view,
+        content_view=content_view,
         environment=module_lce_library,
     ).create()
 
-    host_root_pass = settings.provisioning.host_root_password
-    pxe_loader = "PXELinux BIOS"  # TODO: Make this a fixture parameter
-
-    hostgroup = sat.api.HostGroup(
-        organization=[module_sca_manifest_org],
-        location=[module_location],
-        architecture=default_architecture,
-        domain=module_provisioning_sat.domain,
-        content_source=module_provisioning_capsule.id,
-        content_view=module_default_org_view,
-        kickstart_repository=ksrepo,
-        lifecycle_environment=module_lce_library,
-        root_pass=host_root_pass,
-        operatingsystem=os,
-        ptable=default_partitiontable,
-        subnet=module_provisioning_sat.subnet,
-        pxe_loader=pxe_loader,
-        group_parameters_attributes=[
-            {
-                'name': 'remote_execution_ssh_keys',
-                'parameter_type': 'string',
-                'value': settings.provisioning.host_ssh_key_pub,
-            },
-            # assign AK in order the hosts to be subscribed
-            {
-                'name': 'kt_activation_keys',
-                'parameter_type': 'string',
-                'value': ak.name,
-            },
-        ],
-    ).create()
-
-    # also return ksrepo because it is not returned in hostgroup
-    return Box(hostgroup=hostgroup, os=os, ksrepo=ksrepo)
+    return Box(os=os, ak=ak, ksrepo=ksrepo, cv=content_view)
 
 
 @pytest.fixture(scope='module')
 def module_provisioning_sat(
+    request,
     module_target_sat,
     module_sca_manifest_org,
     module_location,
@@ -133,6 +141,7 @@ def module_provisioning_sat(
     It uses the artifacts from the workflow to create all the necessary Satellite entities
     that are later used by the tests.
     """
+    provisioning_type = getattr(request, 'param', '')
     sat = module_target_sat
     provisioning_domain_name = f"{gen_string('alpha').lower()}.foo"
 
@@ -188,7 +197,7 @@ def module_provisioning_sat(
         domain=[domain.id],
     ).create()
 
-    return Box(sat=sat, domain=domain, subnet=subnet)
+    return Box(sat=sat, domain=domain, subnet=subnet, provisioning_type=provisioning_type)
 
 
 @pytest.fixture(scope='module')
@@ -200,11 +209,10 @@ def module_ssh_key_file():
     return layout
 
 
-@pytest.fixture()
-def provisioning_host(module_ssh_key_file, request):
+@pytest.fixture
+def provisioning_host(module_ssh_key_file, pxe_loader):
     """Fixture to check out blank VM"""
     vlan_id = settings.provisioning.vlan_id
-    vm_firmware = 'bios' if not hasattr(request, 'param') else request.param
     cd_iso = (
         ""  # TODO: Make this an optional fixture parameter (update vm_firmware when adding this)
     )
@@ -212,7 +220,7 @@ def provisioning_host(module_ssh_key_file, request):
         workflow="deploy-configure-pxe-provisioning-host-rhv",
         host_class=ContentHost,
         target_vlan_id=vlan_id,
-        target_vm_firmware=vm_firmware,
+        target_vm_firmware=pxe_loader.vm_firmware,
         target_vm_cd_iso=cd_iso,
         blank=True,
         target_memory='6GiB',
@@ -221,3 +229,95 @@ def provisioning_host(module_ssh_key_file, request):
         yield prov_host
         # Set host as non-blank to run teardown of the host
         prov_host.blank = getattr(prov_host, 'blank', False)
+
+
+@pytest.fixture
+def provisioning_hostgroup(
+    module_provisioning_sat,
+    module_sca_manifest_org,
+    module_location,
+    default_architecture,
+    module_provisioning_rhel_content,
+    module_lce_library,
+    default_partitiontable,
+    module_provisioning_capsule,
+    pxe_loader,
+):
+    return module_provisioning_sat.sat.api.HostGroup(
+        organization=[module_sca_manifest_org],
+        location=[module_location],
+        architecture=default_architecture,
+        domain=module_provisioning_sat.domain,
+        content_source=module_provisioning_capsule.id,
+        content_view=module_provisioning_rhel_content.cv,
+        kickstart_repository=module_provisioning_rhel_content.ksrepo,
+        lifecycle_environment=module_lce_library,
+        root_pass=settings.provisioning.host_root_password,
+        operatingsystem=module_provisioning_rhel_content.os,
+        ptable=default_partitiontable,
+        subnet=module_provisioning_sat.subnet,
+        pxe_loader=pxe_loader.pxe_loader,
+        group_parameters_attributes=[
+            {
+                'name': 'remote_execution_ssh_keys',
+                'parameter_type': 'string',
+                'value': settings.provisioning.host_ssh_key_pub,
+            },
+            # assign AK in order the hosts to be subscribed
+            {
+                'name': 'kt_activation_keys',
+                'parameter_type': 'string',
+                'value': module_provisioning_rhel_content.ak.name,
+            },
+        ],
+    ).create()
+
+
+@pytest.fixture
+def pxe_loader(request):
+    """Map the appropriate PXE loader to VM bootloader"""
+    PXE_LOADER_MAP = {
+        'bios': {'vm_firmware': 'bios', 'pxe_loader': 'PXELinux BIOS'},
+        'uefi': {'vm_firmware': 'uefi', 'pxe_loader': 'Grub2 UEFI'},
+    }
+    return Box(PXE_LOADER_MAP[getattr(request, 'param', 'bios')])
+
+
+@pytest.fixture
+def pxeless_discovery_host(provisioning_host, module_discovery_sat):
+    """Fixture for returning a pxe-less discovery host for provisioning"""
+    sat = module_discovery_sat.sat
+    image_name = f"{gen_string('alpha')}-{module_discovery_sat.iso}"
+    mac = provisioning_host._broker_args['provisioning_nic_mac_addr']
+    # Remaster and upload discovery image to automatically input values
+    result = sat.execute(
+        'cd /var/www/html/pub && '
+        f'discovery-remaster {module_discovery_sat.iso} '
+        f'"proxy.type=foreman proxy.url=https://{sat.hostname}:443 fdi.pxmac={mac} fdi.pxauto=1"'
+    )
+    pattern = re.compile(r"foreman-discovery-image\S+")
+    fdi = pattern.findall(result.stdout)[0]
+    Broker(
+        workflow='import-disk-image',
+        import_disk_image_name=image_name,
+        import_disk_image_url=(f'https://{sat.hostname}/pub/{fdi}'),
+    ).execute()
+    # Change host to boot from CD ISO
+    Broker(
+        job_template='configure-pxe-boot-rhv',
+        target_host=provisioning_host.name,
+        target_vlan_id=settings.provisioning.vlan_id,
+        target_vm_firmware=provisioning_host._broker_args['target_vm_firmware'],
+        target_vm_cd_iso=image_name,
+        target_boot_scenario='pxeless_pre',
+    ).execute()
+    yield provisioning_host
+    # Remove ISO from host and delete disk image
+    Broker(
+        job_template='configure-pxe-boot-rhv',
+        target_host=provisioning_host.name,
+        target_vlan_id=settings.provisioning.vlan_id,
+        target_vm_firmware=provisioning_host._broker_args['target_vm_firmware'],
+        target_boot_scenario='pxeless_pre',
+    ).execute()
+    Broker(workflow='remove-disk-image', remove_disk_image_name=image_name).execute()

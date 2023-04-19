@@ -1,14 +1,14 @@
 """Test class for Products UI
 
-:Requirement: Product
+:Requirement: Repositories
 
 :CaseAutomation: Automated
 
 :CaseLevel: Component
 
-:CaseComponent: ContentManagement
+:CaseComponent: Repositories
 
-:Assignee: ltran
+:team: Phoenix-content
 
 :TestType: Functional
 

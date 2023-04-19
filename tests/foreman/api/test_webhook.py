@@ -6,9 +6,9 @@
 
 :CaseLevel: Component
 
-:CaseComponent: Webhooks
+:CaseComponent: HooksandWebhooks
 
-:Assignee: gsulliva
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -124,6 +124,7 @@ class TestWebhook:
         assert hook.http_method == method
 
     @pytest.mark.tier1
+    @pytest.mark.e2e
     def test_positive_end_to_end(self):
         """Create a new webhook.
 

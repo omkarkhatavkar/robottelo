@@ -8,7 +8,7 @@
 
 :CaseComponent: ErrataManagement
 
-:Assignee: addubey
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -41,7 +41,6 @@ from robottelo.constants import REAL_0_RH_PACKAGE
 from robottelo.constants import REAL_4_ERRATA_CVES
 from robottelo.constants import REAL_4_ERRATA_ID
 from robottelo.hosts import ContentHost
-from robottelo.manifests import upload_manifest_locked
 
 
 CUSTOM_REPO_URL = settings.repos.yum_9.url
@@ -84,7 +83,7 @@ def _set_setting_value(setting_entity, value):
     setting_entity.update(['value'])
 
 
-def _org():
+def _org(module_target_sat):
     org = entities.Organization().create()
     # adding remote_execution_connect_by_ip=Yes at org level
     entities.Parameter(
@@ -93,7 +92,7 @@ def _org():
         value='Yes',
         organization=org.id,
     ).create()
-    upload_manifest_locked(org.id)
+    module_target_sat.upload_manifest(org.id)
     return org
 
 
@@ -235,7 +234,7 @@ def test_end_to_end(
         assert status['overview']['job_status_progress'] == '100%'
         _generate_errata_applicability(vm.hostname)
         vm = vm.nailgun_host.read()
-        assert vm.content_facet_attributes['errata_counts']['total'] == 0
+        assert vm.applicable_errata_count == 0
 
 
 @pytest.mark.tier2

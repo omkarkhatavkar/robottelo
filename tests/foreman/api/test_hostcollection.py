@@ -8,7 +8,7 @@
 
 :CaseComponent: HostCollections
 
-:Assignee: spusater
+:team: Phoenix-subscriptions
 
 :TestType: Functional
 

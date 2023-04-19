@@ -4,11 +4,25 @@ from fauxfactory import gen_string
 from nailgun import entities
 from nailgun.entity_mixins import call_entity_method_with_timeout
 
-from robottelo.api.utils import enable_rhrepo_and_fetchid
 from robottelo.constants import DEFAULT_ARCHITECTURE
 from robottelo.constants import PRDS
 from robottelo.constants import REPOS
 from robottelo.constants import REPOSET
+
+
+@pytest.fixture(scope='module')
+def module_repo_options(request, module_org, module_product):
+    """Return the options that were passed as indirect parameters."""
+    options = getattr(request, 'param', {}).copy()
+    options['organization'] = module_org
+    options['product'] = module_product
+    return options
+
+
+@pytest.fixture(scope='module')
+def module_repo(module_repo_options, module_target_sat):
+    """Create a new repository."""
+    return module_target_sat.api.Repository(**module_repo_options).create()
 
 
 @pytest.fixture(scope='function')
@@ -22,10 +36,10 @@ def module_product(module_org, module_target_sat):
 
 
 @pytest.fixture(scope='module')
-def rh_repo_gt_manifest(module_gt_manifest_org):
+def rh_repo_gt_manifest(module_gt_manifest_org, module_target_sat):
     """Use GT manifest org, creates RH tools repo, syncs and returns RH repo."""
     # enable rhel repo and return its ID
-    rh_repo_id = enable_rhrepo_and_fetchid(
+    rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch=DEFAULT_ARCHITECTURE,
         org_id=module_gt_manifest_org.id,
         product=PRDS['rhel'],
@@ -43,7 +57,7 @@ def rh_repo_gt_manifest(module_gt_manifest_org):
 def module_rhst_repo(module_target_sat, module_org_with_manifest, module_promoted_cv, module_lce):
     """Use module org with manifest, creates RH tools repo, syncs and returns RH repo id."""
     # enable rhel repo and return its ID
-    rh_repo_id = enable_rhrepo_and_fetchid(
+    rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch=DEFAULT_ARCHITECTURE,
         org_id=module_org_with_manifest.id,
         product=PRDS['rhel'],

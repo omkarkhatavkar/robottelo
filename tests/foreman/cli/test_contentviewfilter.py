@@ -8,7 +8,7 @@
 
 :CaseComponent: ContentViews
 
-:Assignee: ltran
+:team: Phoenix-content
 
 :TestType: Functional
 

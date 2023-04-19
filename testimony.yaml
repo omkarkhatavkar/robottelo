@@ -1,4 +1,4 @@
-Assignee:
+Team:
     required: true
 BZ: {}
 CaseAutomation:
@@ -14,6 +14,7 @@ CaseComponent:
     choices:
     # No spaces allowed
     - ActivationKeys
+    - AlternateContentSources
     - Ansible
     - AnsibleCollection
     - API
@@ -63,7 +64,7 @@ CaseComponent:
     - Infrastructure
     - Installer
     - InterSatelliteSync
-    - Katello-agent
+    - katello-agent
     - Katello-tracer
     - LDAP
     - Leappintegration
@@ -73,7 +74,7 @@ CaseComponent:
     - Navigation
     - Networking
     - Notifications
-    - OrganizationsLocations
+    - OrganizationsandLocations
     - Packaging
     - Parameters
     - Provisioning
@@ -107,7 +108,7 @@ CaseComponent:
     - Upgrades
     - UsersRoles
     - Virt-whoConfigurePlugin
-    - Webhooks
+    - HooksandWebhooks
     required: true
     type: choice
 CaseImportance:

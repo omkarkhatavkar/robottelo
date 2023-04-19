@@ -12,7 +12,7 @@ http://www.katello.org/docs/api/apidoc/lifecycle_environments.html
 
 :CaseComponent: LifecycleEnvironments
 
-:Assignee: ltran
+:team: Phoenix-content
 
 :TestType: Functional
 

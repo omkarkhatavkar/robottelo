@@ -6,9 +6,9 @@
 
 :CaseLevel: Integration
 
-:CaseComponent: Convert2rhel
+:CaseComponent: Registration
 
-:Assignee: shwsingh
+:Team: Rocket
 
 :TestType: Functional
 
@@ -17,8 +17,6 @@
 import pytest
 import requests
 
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import wait_for_tasks
 from robottelo.config import settings
 from robottelo.constants import DEFAULT_ARCHITECTURE
 from robottelo.constants import DEFAULT_SUBSCRIPTION_NAME
@@ -72,9 +70,8 @@ def register_host(sat, act_key, module_org, module_loc, host, ubi=None):
         location=module_loc,
         insecure=True,
         repo=ubi,
-    ).create()['registration_command']
-    result = host.execute(command)
-    assert result.status == 0
+    ).create()
+    assert host.execute(command).status == 0
 
 
 @pytest.fixture(scope='module')
@@ -98,7 +95,7 @@ def activation_key_rhel(target_sat, module_org, module_lce, module_promoted_cv, 
 
 
 @pytest.fixture(scope='module')
-def enable_rhel_subscriptions(module_target_sat, module_org_with_manifest, version):
+def enable_rhel_subscriptions(module_target_sat, module_entitlement_manifest_org, version):
     """Enable and sync RHEL rpms repos"""
     major = version.split('.')[0]
     minor = ""
@@ -111,9 +108,9 @@ def enable_rhel_subscriptions(module_target_sat, module_org_with_manifest, versi
     rh_repos = []
     tasks = []
     for name in repo_names:
-        rh_repo_id = enable_rhrepo_and_fetchid(
+        rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
             basearch=DEFAULT_ARCHITECTURE,
-            org_id=module_org_with_manifest.id,
+            org_id=module_entitlement_manifest_org.id,
             product=REPOS[name]['product'],
             repo=REPOS[name]['name'] + minor,
             reposet=REPOS[name]['reposet'],
@@ -125,7 +122,7 @@ def enable_rhel_subscriptions(module_target_sat, module_org_with_manifest, versi
         tasks.append(task)
         rh_repos.append(rh_repo)
     for task in tasks:
-        wait_for_tasks(
+        module_target_sat.wait_for_tasks(
             search_query=(f'id = {task["id"]}'),
             poll_timeout=2500,
         )
@@ -251,7 +248,7 @@ def test_convert2rhel_oracle(target_sat, oracle, activation_key_rhel, version):
         },
     )
     # wait for job to complete
-    wait_for_tasks(
+    target_sat.wait_for_tasks(
         f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1000
     )
     result = target_sat.api.JobInvocation(id=job['id']).read()
@@ -307,7 +304,7 @@ def test_convert2rhel_centos(target_sat, centos, activation_key_rhel, version):
         },
     )
     # wait for job to complete
-    wait_for_tasks(
+    target_sat.wait_for_tasks(
         f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1000
     )
     result = target_sat.api.JobInvocation(id=job['id']).read()

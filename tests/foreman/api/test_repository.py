@@ -8,7 +8,7 @@
 
 :CaseComponent: Repositories
 
-:Assignee: chiggins
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -33,12 +33,10 @@ from nailgun.entity_mixins import TaskFailedError
 from requests.exceptions import HTTPError
 
 from robottelo import constants
-from robottelo import manifests
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import upload_manifest
 from robottelo.config import settings
 from robottelo.constants import DataFile
 from robottelo.constants import repos as repo_constants
+from robottelo.content_info import get_repo_files_by_url
 from robottelo.logging import logger
 from robottelo.utils import datafactory
 from robottelo.utils.datafactory import parametrized
@@ -1159,7 +1157,7 @@ class TestRepository:
         with pytest.raises(HTTPError):
             repo.read()
 
-    def test_positive_recreate_pulp_repositories(self, module_org, target_sat):
+    def test_positive_recreate_pulp_repositories(self, module_entitlement_manifest_org, target_sat):
         """Verify that deleted Pulp Repositories can be recreated using the
         command 'foreman-rake katello:correct_repositories COMMIT=true'
 
@@ -1172,11 +1170,9 @@ class TestRepository:
         :expectedresults: foreman-rake katello:correct_repositories COMMIT=true recreates deleted
          repos with no TaskErrors
         """
-        with manifests.clone() as manifest:
-            upload_manifest(module_org.id, manifest.content)
-        repo_id = enable_rhrepo_and_fetchid(
+        repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
             basearch='x86_64',
-            org_id=module_org.id,
+            org_id=module_entitlement_manifest_org.id,
             product=constants.PRDS['rhel'],
             repo=constants.REPOS['rhst7']['name'],
             reposet=constants.REPOSET['rhst7'],
@@ -1198,14 +1194,89 @@ class TestRepository:
         command_output = target_sat.execute('foreman-rake katello:correct_repositories COMMIT=true')
         assert 'Recreating' in command_output.stdout and 'TaskError' not in command_output.stdout
 
+    @pytest.mark.tier2
+    def test_positive_mirroring_policy(self, target_sat):
+        """Assert that the content of a repository with 'Mirror Policy' enabled
+        is restored properly after resync.
+
+        :id: cbf1c781-cb96-4b4a-bae2-15c9f5be5e50
+
+        :steps:
+            1. Create and sync a repo with 'Mirror Policy - mirror complete' enabled.
+            2. Remove all packages from the repo and upload another one.
+            3. Resync the repo again.
+            4. Check the content was restored properly.
+
+        :expectedresults:
+            1. The resync restores the original content properly.
+
+        :CaseLevel: System
+        """
+        repo_url = settings.repos.yum_0.url
+        packages_count = constants.FAKE_0_YUM_REPO_PACKAGES_COUNT
+
+        org = entities.Organization().create()
+        prod = entities.Product(organization=org).create()
+        repo = entities.Repository(
+            download_policy='immediate',
+            mirroring_policy='mirror_complete',
+            product=prod,
+            url=repo_url,
+        ).create()
+        repo.sync()
+        repo = repo.read()
+        assert repo.content_counts['rpm'] == packages_count
+
+        # remove all packages from the repo and upload another one
+        packages = entities.Package(repository=repo).search(query={'per_page': '1000'})
+        repo.remove_content(data={'ids': [package.id for package in packages]})
+
+        with open(DataFile.RPM_TO_UPLOAD, 'rb') as handle:
+            repo.upload_content(files={'content': handle})
+
+        repo = repo.read()
+        assert repo.content_counts['rpm'] == 1
+        files = get_repo_files_by_url(repo.full_path)
+        assert len(files) == 1
+        assert constants.RPM_TO_UPLOAD in files
+
+        # resync the repo again and check the content
+        repo.sync()
+
+        repo = repo.read()
+        assert repo.content_counts['rpm'] == packages_count
+        files = get_repo_files_by_url(repo.full_path)
+        assert len(files) == packages_count
+        assert constants.RPM_TO_UPLOAD not in files
+
 
 @pytest.mark.run_in_one_thread
 class TestRepositorySync:
     """Tests for ``/katello/api/repositories/:id/sync``."""
 
     @pytest.mark.tier2
-    @pytest.mark.skip_if_not_set('fake_manifest')
-    def test_positive_sync_rh(self, module_org):
+    def test_positive_sync_repos_with_lots_files(self):
+        """Attempt to synchronize repository containing a lot of files inside
+        rpms.
+
+        :id: 2cc09ce3-d5df-4caa-956a-78f83a7735ca
+
+        :customerscenario: true
+
+        :BZ: 1404345
+
+        :CaseLevel: Integration
+
+        :expectedresults: repository was successfully synchronized
+        """
+        org = entities.Organization().create()
+        product = entities.Product(organization=org).create()
+        repo = entities.Repository(product=product, url=settings.repos.yum_8.url).create()
+        response = repo.sync()
+        assert response, f"Repository {repo} failed to sync."
+
+    @pytest.mark.tier2
+    def test_positive_sync_rh(self, module_entitlement_manifest_org, target_sat):
         """Sync RedHat Repository.
 
         :id: d69c44cd-753c-4a75-9fd5-a8ed963b5e04
@@ -1214,11 +1285,9 @@ class TestRepositorySync:
 
         :CaseLevel: Integration
         """
-        with manifests.clone() as manifest:
-            upload_manifest(module_org.id, manifest.content)
-        repo_id = enable_rhrepo_and_fetchid(
+        repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
             basearch='x86_64',
-            org_id=module_org.id,
+            org_id=module_entitlement_manifest_org.id,
             product=constants.PRDS['rhel'],
             repo=constants.REPOS['rhst7']['name'],
             reposet=constants.REPOSET['rhst7'],
@@ -1260,7 +1329,6 @@ class TestRepositorySync:
 
     @pytest.mark.stubbed
     @pytest.mark.tier2
-    @pytest.mark.skip_if_not_set('fake_manifest')
     def test_positive_sync_rh_app_stream(self):
         """Sync RedHat Appstream Repository.
 
@@ -1274,7 +1342,7 @@ class TestRepositorySync:
         pass
 
     @pytest.mark.tier3
-    def test_positive_bulk_cancel_sync(self, target_sat, module_manifest_org):
+    def test_positive_bulk_cancel_sync(self, target_sat, module_entitlement_manifest_org):
         """Bulk cancel 10+ repository syncs
 
         :id: f9bb1c95-d60f-4c93-b32e-09d58ebce80e
@@ -1292,9 +1360,9 @@ class TestRepositorySync:
         """
         repo_ids = []
         for repo in constants.BULK_REPO_LIST:
-            repo_id = enable_rhrepo_and_fetchid(
+            repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
                 basearch='x86_64',
-                org_id=module_manifest_org.id,
+                org_id=module_entitlement_manifest_org.id,
                 product=repo['product'],
                 repo=repo['name'],
                 reposet=repo['reposet'],
@@ -1356,7 +1424,9 @@ class TestRepositorySync:
         assert result.status == 1
 
     @pytest.mark.tier2
-    def test_positive_sync_repo_null_contents_changed(self, module_manifest_org, target_sat):
+    def test_positive_sync_repo_null_contents_changed(
+        self, module_entitlement_manifest_org, target_sat
+    ):
         """test for null contents_changed parameter on actions::katello::repository::sync.
 
         :id: f3923940-e097-4da3-aba7-b14dbcda857b
@@ -1372,9 +1442,9 @@ class TestRepositorySync:
 
         :CaseAutomation: Automated
         """
-        repo_id = enable_rhrepo_and_fetchid(
+        repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
             basearch='x86_64',
-            org_id=module_manifest_org.id,
+            org_id=module_entitlement_manifest_org.id,
             product=constants.PRDS['rhel'],
             repo=constants.REPOS['rhst7']['name'],
             reposet=constants.REPOSET['rhst7'],
@@ -1388,6 +1458,49 @@ class TestRepositorySync:
         )
         assert prod_log_out.status == 0
         assert "(0 rows)" in prod_log_out.stdout
+
+    @pytest.mark.parametrize(
+        'distro',
+        [
+            ver
+            for ver in settings.supportability.content_hosts.rhel.versions
+            if isinstance(ver, int)
+        ],
+    )
+    def test_positive_sync_kickstart_check_os(
+        self, module_entitlement_manifest_org, distro, target_sat
+    ):
+        """Sync rhel KS repo and assert that OS was created
+
+        :id: f84bcf1b-717e-40e7-82ee-000eead45249
+
+        :Parametrized: Yes
+
+        :steps:
+            1. Enable and sync a kickstart repo.
+            2. Check that OS with corresponding version.
+
+        :expectedresults:
+            1. OS with corresponding version was created.
+
+        """
+        distro = f'rhel{distro} + "_bos"' if distro > 7 else f'rhel{distro}'
+        repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
+            basearch='x86_64',
+            org_id=module_entitlement_manifest_org.id,
+            product=constants.REPOS['kickstart'][distro]['product'],
+            reposet=constants.REPOSET['kickstart'][distro],
+            repo=constants.REPOS['kickstart'][distro]['name'],
+            releasever=constants.REPOS['kickstart'][distro]['version'],
+        )
+        rh_repo = entities.Repository(id=repo_id).read()
+        rh_repo.sync()
+
+        major, minor = constants.REPOS['kickstart'][distro]['version'].split('.')
+        os = entities.OperatingSystem().search(
+            query={'search': f'name="RedHat" AND major="{major}" AND minor="{minor}"'}
+        )
+        assert len(os)
 
 
 class TestDockerRepository:
@@ -1501,7 +1614,7 @@ class TestDockerRepository:
 
     @pytest.mark.tier2
     @pytest.mark.parametrize(
-        'repo_options',
+        'repo_options_custom_product',
         **datafactory.parametrized(
             {
                 constants.CONTAINER_UPSTREAM_NAME: {
@@ -1514,7 +1627,7 @@ class TestDockerRepository:
         ),
         indirect=True,
     )
-    def test_positive_delete_product_with_synced_repo(self, repo, repo_options_custom_product):
+    def test_positive_delete_product_with_synced_repo(self, repo_options_custom_product):
         """Create and sync a Docker-type repository, delete the product.
 
         :id: c3d33836-54df-484d-97e1-f9fc9e22d23c
@@ -1529,7 +1642,8 @@ class TestDockerRepository:
 
         :BZ: 1867287
         """
-        repo.sync()
+        repo = entities.Repository(**repo_options_custom_product).create()
+        repo.sync(timeout=600)
         assert repo.read().content_counts['docker_manifest'] >= 1
         assert repo.product.delete()
 
@@ -1981,7 +2095,7 @@ class TestDockerRepository:
 #
 #         :BZ: 1625783
 #         """
-#         with manifests.clone() as manifest:
+#         with clone() as manifest:
 #             upload_manifest(module_org.id, manifest.content)
 #         repo_id = enable_rhrepo_and_fetchid(
 #             org_id=module_org.id,
@@ -2074,7 +2188,7 @@ class TestSRPMRepositoryIgnoreContent:
 
     :customerscenario: true
 
-    :Assignee: ltran
+    :team: Phoenix-content
 
     :BZ: 1673215
     """
@@ -2334,7 +2448,7 @@ class TestTokenAuthContainerRepository:
 
     :CaseComponent: ContainerManagement-Content
 
-    :Assignee: addubey
+    :team: Phoenix-content
     """
 
     @pytest.mark.tier2

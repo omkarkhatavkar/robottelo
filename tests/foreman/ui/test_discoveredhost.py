@@ -6,7 +6,7 @@
 
 :CaseComponent: DiscoveryImage
 
-:Assignee: gsulliva
+:Team: Rocket
 
 :TestType: Functional
 
@@ -19,9 +19,6 @@ from fauxfactory import gen_ipaddr
 from fauxfactory import gen_string
 from nailgun import entities
 
-from robottelo.api.utils import configure_provisioning
-from robottelo.api.utils import create_discovered_host
-from robottelo.libvirt_discovery import LibvirtGuest
 from robottelo.utils import ssh
 
 pytestmark = [pytest.mark.run_in_one_thread]
@@ -55,7 +52,7 @@ def discovery_location(module_location):
 def provisioning_env(module_target_sat, discovery_org, discovery_location):
     # Build PXE default template to get default PXE file
     module_target_sat.cli.ProvisioningTemplate().build_pxe_default()
-    return configure_provisioning(
+    return module_target_sat.api_factory.configure_provisioning(
         org=discovery_org,
         loc=discovery_location,
         os='Redhat {}'.format(module_target_sat.cli_factory.RHELRepository().repo_data['version']),
@@ -63,8 +60,8 @@ def provisioning_env(module_target_sat, discovery_org, discovery_location):
 
 
 @pytest.fixture
-def discovered_host():
-    return create_discovered_host()
+def discovered_host(target_sat):
+    return target_sat.api_factory.create_discovered_host()
 
 
 @pytest.fixture(scope='module')
@@ -104,11 +101,8 @@ def _is_host_reachable(host, retries=12, iteration_sleep=5, expect_reachable=Tru
         return bool(result.status)
 
 
-@pytest.mark.skip_if_not_set('compute_resources', 'vlan_networking')
+@pytest.mark.stubbed
 @pytest.mark.tier3
-@pytest.mark.vlan_networking
-@pytest.mark.libvirt_discovery
-@pytest.mark.upgrade
 def test_positive_pxe_based_discovery(session, provisioning_env):
     """Discover a host via PXE boot by setting "proxy.type=proxy" in
     PXE default
@@ -125,18 +119,10 @@ def test_positive_pxe_based_discovery(session, provisioning_env):
 
     :CaseImportance: Critical
     """
-    with LibvirtGuest() as pxe_host:
-        host_name = pxe_host.guest_name
-        with session:
-            discovered_host_values = session.discoveredhosts.wait_for_entity(host_name)
-            assert discovered_host_values['Name'] == host_name
 
 
-@pytest.mark.skip_if_not_set('compute_resources', 'discovery', 'vlan_networking')
+@pytest.mark.stubbed
 @pytest.mark.tier3
-@pytest.mark.vlan_networking
-@pytest.mark.libvirt_discovery
-@pytest.mark.upgrade
 def test_positive_pxe_less_with_dhcp_unattended(session, provisioning_env):
     """Discover a host with dhcp via bootable discovery ISO by setting
     "proxy.type=proxy" in PXE default in unattended mode.
@@ -153,11 +139,6 @@ def test_positive_pxe_less_with_dhcp_unattended(session, provisioning_env):
 
     :CaseImportance: Critical
     """
-    with LibvirtGuest(boot_iso=True) as pxe_less_host:
-        host_name = pxe_less_host.guest_name
-        with session:
-            discovered_host_values = session.discoveredhosts.wait_for_entity(host_name)
-            assert discovered_host_values['Name'] == host_name
 
 
 @pytest.mark.tier3
@@ -238,7 +219,7 @@ def test_positive_update_name(
 @pytest.mark.tier3
 @pytest.mark.upgrade
 def test_positive_auto_provision_host_with_rule(
-    session, discovery_org, discovery_location, module_host_group
+    session, discovery_org, discovery_location, module_host_group, target_sat
 ):
     """Create a new discovery rule and automatically create host from discovered host using that
     discovery rule.
@@ -256,7 +237,7 @@ def test_positive_auto_provision_host_with_rule(
     :CaseImportance: High
     """
     host_ip = gen_ipaddr()
-    discovered_host_name = create_discovered_host(ip_address=host_ip)['name']
+    discovered_host_name = target_sat.api_factory.create_discovered_host(ip_address=host_ip)['name']
     domain = module_host_group.domain.read()
     discovery_rule = entities.DiscoveryRule(
         max_count=1,
@@ -300,7 +281,7 @@ def test_positive_delete(session, discovery_org, discovery_location, discovered_
 
 
 @pytest.mark.tier3
-def test_positive_update_default_taxonomies(session, discovery_org, discovery_location):
+def test_positive_update_default_taxonomies(session, discovery_org, discovery_location, target_sat):
     """Change the default organization and location of more than one
     discovered hosts from 'Select Action' drop down
 
@@ -315,7 +296,7 @@ def test_positive_update_default_taxonomies(session, discovery_org, discovery_lo
 
     :CaseImportance: High
     """
-    host_names = [create_discovered_host()['name'] for _ in range(2)]
+    host_names = [target_sat.api_factory.create_discovered_host()['name'] for _ in range(2)]
     new_org = entities.Organization().create()
     discovery_location.organization.append(new_org)
     discovery_location.update(['organization'])
@@ -341,9 +322,7 @@ def test_positive_update_default_taxonomies(session, discovery_org, discovery_lo
         assert len(values['hosts']) == 2
 
 
-@pytest.mark.skip_if_not_set('compute_resources', 'vlan_networking')
-@pytest.mark.libvirt_discovery
-@pytest.mark.vlan_networking
+@pytest.mark.stubbed
 @pytest.mark.tier3
 def test_positive_reboot(session, provisioning_env):
     """Reboot a discovered host.
@@ -359,15 +338,3 @@ def test_positive_reboot(session, provisioning_env):
 
     :CaseImportance: Medium
     """
-    with LibvirtGuest() as pxe_host:
-        host_name = pxe_host.guest_name
-        with session:
-            discovered_host_values = session.discoveredhosts.wait_for_entity(host_name)
-            assert discovered_host_values['Name'] == host_name
-            host_ip = discovered_host_values['IP Address']
-            assert host_ip
-            # Ensure that the host is reachable
-            assert _is_host_reachable(host_ip)
-            session.discoveredhosts.apply_action('Reboot', host_name)
-            # Ensure that the host is not reachable
-            assert not _is_host_reachable(host_ip, expect_reachable=False)

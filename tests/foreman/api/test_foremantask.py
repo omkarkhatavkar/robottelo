@@ -8,7 +8,7 @@
 
 :CaseComponent: TasksPlugin
 
-:Assignee: pondrejk
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -37,6 +37,7 @@ def test_negative_fetch_non_existent_task():
 
 @pytest.mark.tier1
 @pytest.mark.upgrade
+@pytest.mark.e2e
 def test_positive_get_summary():
     """Get a summary of foreman tasks.
 

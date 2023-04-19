@@ -11,7 +11,7 @@ http://www.katello.org/docs/api/apidoc/compute_resources.html
 
 :CaseComponent: ComputeResources-GCE
 
-:Assignee: addubey
+:Team: Rocket
 
 :TestType: Functional
 
@@ -30,6 +30,7 @@ from robottelo.constants import VALID_GCE_ZONES
 
 clouduser = gen_string('alpha')
 finishuser = gen_string('alpha')
+RHEL_CLOUD_PROJECTS = ['rhel-cloud', 'rhel-sap-cloud']
 
 
 @pytest.fixture(scope='module')
@@ -180,9 +181,7 @@ class TestGCEComputeResourceTestCases:
         compresource = entities.GCEComputeResource(
             name=cr_name,
             provider='GCE',
-            email=gce_cert['client_email'],
             key_path=settings.gce.cert_path,
-            project=gce_cert['project_id'],
             zone=settings.gce.zone,
             organization=[module_org],
             location=[module_location],
@@ -207,17 +206,27 @@ class TestGCEComputeResourceTestCases:
 
     @pytest.mark.tier3
     def test_positive_check_available_images(self, module_gce_compute, googleclient):
-        """Verify all the images from GCE are available to select from
+        """Verify RHEL images from GCP are available to select in GCE CR
 
         :id: 5cdfab18-a591-4442-8c19-a01e9b10ac36
 
-        :expectedresults: All the images from Google CR should be available to select in GCE CR
+        :BZ: 2164989
+
+        :expectedresults: RHEL images from GCP are available to select in GCE CR
 
         :CaseLevel: Integration
         """
         satgce_images = module_gce_compute.available_images()
-        gcloudclinet_images = googleclient.list_templates(True)
-        assert len(satgce_images) == len(gcloudclinet_images)
+        googleclient_images = googleclient.list_templates(
+            include_public=True, public_projects=RHEL_CLOUD_PROJECTS
+        )
+        googleclient_image_names = [img.name for img in googleclient_images]
+        # Validating GCE_CR images in Google CR
+        sat_available_images = [satgce_images[i]['name'] for i in range(len(satgce_images))]
+        for image in sat_available_images:
+            assert image in googleclient_image_names
+            # Validate only rhel-images exist in GCE_CR
+            assert image.startswith('rhel-')
 
     @pytest.mark.tier3
     def test_positive_check_available_networks(self, module_gce_compute, googleclient):
@@ -376,7 +385,7 @@ class TestGCEHostProvisioningTestCase:
 
         :expectedresults:
             1. The host should be provisioned on Google Compute Engine
-            2. The host name should should be the same as given in data to provision the host
+            2. The host name should be the same as given in data to provision the host
             3. The host should show Installed status for provisioned host
         """
         assert class_host.name == self.fullhostname

@@ -8,7 +8,7 @@
 
 :CaseComponent: Hosts
 
-:Assignee: pdragun
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -19,7 +19,6 @@
 import copy
 import csv
 import os
-import random
 import re
 from datetime import datetime
 
@@ -31,13 +30,11 @@ from airgun.session import Session
 from wait_for import wait_for
 
 from robottelo import constants
-from robottelo.api.utils import create_role_permissions
-from robottelo.api.utils import cv_publish_promote
-from robottelo.api.utils import wait_for_tasks
 from robottelo.config import settings
 from robottelo.constants import ANY_CONTEXT
 from robottelo.constants import DEFAULT_CV
 from robottelo.constants import DEFAULT_LOC
+from robottelo.constants import DEFAULT_ORG
 from robottelo.constants import DEFAULT_SUBSCRIPTION_NAME
 from robottelo.constants import ENVIRONMENT
 from robottelo.constants import FAKE_1_CUSTOM_PACKAGE
@@ -50,6 +47,7 @@ from robottelo.constants import OSCAP_WEEKDAY
 from robottelo.constants import PERMISSIONS
 from robottelo.constants import REPO_TYPE
 from robottelo.utils.datafactory import gen_string
+from robottelo.utils.issue_handlers import is_open
 
 
 def _get_set_from_list_of_dict(value):
@@ -98,15 +96,6 @@ def module_global_params(module_target_sat):
     # cleanup global parameters
     for global_parameter in global_parameters:
         global_parameter.delete()
-
-
-@pytest.fixture(scope='module')
-def module_host_template(module_org, smart_proxy_location, module_target_sat):
-    host_template = module_target_sat.api.Host(
-        organization=module_org, location=smart_proxy_location
-    )
-    host_template.create_missing()
-    return host_template
 
 
 @pytest.fixture(scope='module')
@@ -238,17 +227,19 @@ def module_libvirt_hostgroup(
 
 
 @pytest.fixture(scope='module')
-def module_activation_key(module_org_with_manifest, module_target_sat):
+def module_activation_key(module_entitlement_manifest_org, module_target_sat):
     """Create activation key using default CV and library environment."""
     activation_key = module_target_sat.api.ActivationKey(
         auto_attach=True,
-        content_view=module_org_with_manifest.default_content_view.id,
-        environment=module_org_with_manifest.library.id,
-        organization=module_org_with_manifest,
+        content_view=module_entitlement_manifest_org.default_content_view.id,
+        environment=module_entitlement_manifest_org.library.id,
+        organization=module_entitlement_manifest_org,
     ).create()
 
     # Find the 'Red Hat Employee Subscription' and attach it to the activation key.
-    for subs in module_target_sat.api.Subscription(organization=module_org_with_manifest).search():
+    for subs in module_target_sat.api.Subscription(
+        organization=module_entitlement_manifest_org
+    ).search():
         if subs.name == DEFAULT_SUBSCRIPTION_NAME:
             # 'quantity' must be 1, not subscription['quantity']. Greater
             # values produce this error: 'RuntimeError: Error: Only pools
@@ -269,10 +260,23 @@ def remove_vm_on_delete(target_sat, setting_update):
     yield
 
 
+@pytest.fixture
+def tracer_install_host(rex_contenthost, target_sat):
+    """Sets up a contenthost with katello-host-tools-tracer enabled,
+    to prep it for install later"""
+    # create a custom, rhel version-specific OS repo
+    rhelver = rex_contenthost.os_version.major
+    if rhelver > 7:
+        rex_contenthost.create_custom_repos(**settings.repos[f'rhel{rhelver}_os'])
+    else:
+        rex_contenthost.create_custom_repos(
+            **{f'rhel{rhelver}_os': settings.repos[f'rhel{rhelver}_os']}
+        )
+    yield rex_contenthost
+
+
 @pytest.mark.tier2
-def test_positive_end_to_end(
-    session, module_org, module_location, module_global_params, target_sat, host_ui_options
-):
+def test_positive_end_to_end(session, module_global_params, target_sat, host_ui_options):
     """Create a new Host with parameters, config group. Check host presence on
         the dashboard. Update name with 'new' prefix and delete.
 
@@ -285,7 +289,7 @@ def test_positive_end_to_end(
 
     :CaseLevel: System
     """
-    values, host_name = host_ui_options
+    api_values, host_name = host_ui_options
     global_params = [
         global_param.to_json_dict(lambda attr, field: attr in ['name', 'value'])
         for global_param in module_global_params
@@ -304,16 +308,16 @@ def test_positive_end_to_end(
             global_param['overridden'] = True
         else:
             global_param['overridden'] = False
-    new_name = 'new{}'.format(gen_string("alpha").lower())
-    new_host_name = '{}.{}'.format(new_name, values['interfaces.interface.domain'])
+    new_name = f"new{gen_string('alpha').lower()}"
+    new_host_name = f"{new_name}.{api_values['interfaces.interface.domain']}"
     with session:
-        values.update(
+        api_values.update(
             {
                 'parameters.host_params': host_parameters,
                 'parameters.global_params': [overridden_global_parameter],
             }
         )
-        session.host.create(values)
+        session.host.create(api_values)
         assert session.host.search(host_name)[0]['Name'] == host_name
         values = session.host.read(host_name, widget_names=['parameters'])
         assert _get_set_from_list_of_dict(
@@ -326,10 +330,7 @@ def test_positive_end_to_end(
         # check host presence on the dashboard
         dashboard_values = session.dashboard.read('NewHosts')['hosts']
         displayed_host = [row for row in dashboard_values if row['Host'] == host_name][0]
-        os_name = '{} {}'.format(
-            module_host_template.operatingsystem.name, module_host_template.operatingsystem.major
-        )
-        assert os_name in displayed_host['Operating System']
+        assert api_values['operating_system.operating_system'] in displayed_host['Operating System']
         assert displayed_host['Installed'] == 'N/A'
         # update
         session.host.update(host_name, {'host.name': new_name})
@@ -341,7 +342,7 @@ def test_positive_end_to_end(
 
 
 @pytest.mark.tier4
-def test_positive_read_from_details_page(session, target_sat, module_host_template):
+def test_positive_read_from_details_page(session, module_host_template):
     """Create new Host and read all its content through details page
 
     :id: ffba5d40-918c-440e-afbb-6b910db3a8fb
@@ -351,29 +352,31 @@ def test_positive_read_from_details_page(session, target_sat, module_host_templa
     :CaseLevel: System
     """
 
-    host = module_host_template.create()
-    os_name = (
-        f'{module_host_template.operatingsystem.name} {module_host_template.operatingsystem.major}'
-    )
-    interface = target_sat.api.Interface(host=host, primary=False).create()
-    host.update(interface.identifier)
+    template = module_host_template
+    template.name = gen_string('alpha').lower()
+    host = template.create()
+    os_name = f'{template.operatingsystem.name} {template.operatingsystem.major}'
     host_name = host.name
     with session:
         assert session.host.search(host_name)[0]['Name'] == host_name
         values = session.host.get_details(host_name)
         assert values['properties']['properties_table']['Status'] == 'OK'
         assert 'Pending installation' in values['properties']['properties_table']['Build']
-        assert values['properties']['properties_table']['Domain'] == host.domain.name
+        assert values['properties']['properties_table']['Domain'] == template.domain.name
         assert values['properties']['properties_table']['MAC Address'] == host.mac
-        assert values['properties']['properties_table']['Architecture'] == host.architecture.name
+        assert (
+            values['properties']['properties_table']['Architecture'] == template.architecture.name
+        )
         assert values['properties']['properties_table']['Operating System'] == os_name
-        assert values['properties']['properties_table']['Location'] == host.location.name
-        assert values['properties']['properties_table']['Organization'] == host.organization.name
-        assert values['properties']['properties_table']['Owner'] == values['current_user']
+        assert values['properties']['properties_table']['Location'] == template.location.name
+        assert (
+            values['properties']['properties_table']['Organization'] == template.organization.name
+        )
+        assert 'Admin User' in values['properties']['properties_table']['Owner']
 
 
 @pytest.mark.tier4
-def test_positive_read_from_edit_page(session, module_host_template, target_sat):
+def test_positive_read_from_edit_page(session, host_ui_options):
     """Create new Host and read all its content through edit page
 
     :id: 758fcab3-b363-4bfc-8f5d-173098a7e72d
@@ -382,31 +385,39 @@ def test_positive_read_from_edit_page(session, module_host_template, target_sat)
 
     :CaseLevel: System
     """
-    host = module_host_template.create()
-    os_name = (
-        f'{module_host_template.operatingsystem.name} {module_host_template.operatingsystem.major}'
-    )
-    interface = target_sat.api.Interface(host=host, primary=False).create()
-    host.update(interface.identifier)
-    host_name = host.name
+    api_values, host_name = host_ui_options
     with session:
+        session.location.select(api_values['host.location'])
+        session.host.create(api_values)
         assert session.host.search(host_name)[0]['Name'] == host_name
         values = session.host.read(host_name)
         assert values['host']['name'] == host_name.partition('.')[0]
-        assert values['host']['organization'] == host.organization.name
-        assert values['host']['location'] == host.location.name
+        assert values['host']['organization'] == api_values['host.organization']
+        assert values['host']['location'] == api_values['host.location']
         assert values['host']['lce'] == ENVIRONMENT
         assert values['host']['content_view'] == DEFAULT_CV
-        assert values['operating_system']['architecture'] == host.architecture.name
-        assert values['operating_system']['operating_system'] == os_name
+        assert (
+            values['operating_system']['architecture']
+            == api_values['operating_system.architecture']
+        )
+        assert (
+            values['operating_system']['operating_system']
+            == api_values['operating_system.operating_system']
+        )
         assert values['operating_system']['media_type'] == 'All Media'
-        assert values['operating_system']['media'] == host.medium.name
-        assert values['operating_system']['ptable'] == host.ptable.name
-        assert values['interfaces']['interfaces_list'][0]['Identifier'] == interface.identifier
+        assert values['operating_system']['media'] == api_values['operating_system.media']
+        assert values['operating_system']['ptable'] == api_values['operating_system.ptable']
+        assert (
+            values['interfaces']['interfaces_list'][0]['Identifier']
+            == api_values['interfaces.interface.device_identifier']
+        )
         assert values['interfaces']['interfaces_list'][0]['Type'] == 'Interface physical'
-        assert values['interfaces']['interfaces_list'][0]['MAC Address'] == host.mac
+        assert (
+            values['interfaces']['interfaces_list'][0]['MAC Address']
+            == api_values['interfaces.interface.mac']
+        )
         assert values['interfaces']['interfaces_list'][0]['FQDN'] == host_name
-        assert values['additional_information']['owned_by'] == values['current_user']
+        assert session._user in values['additional_information']['owned_by']
         assert values['additional_information']['enabled'] is True
 
 
@@ -577,7 +588,7 @@ def test_positive_create_with_inherited_params(
         organization=function_org, location=function_location_with_org
     )
     host_template.create_missing()
-    host = target_sat.api.Host().create()
+    host = host_template.create()
     host_name = host.name
     with session:
         session.organization.update(function_org.name, {'parameters.resources': org_param})
@@ -614,6 +625,7 @@ def test_negative_delete_primary_interface(session, host_ui_options):
     values, host_name = host_ui_options
     interface_id = values['interfaces.interface.device_identifier']
     with session:
+        session.location.select(values['host.location'])
         session.host.create(values)
         with pytest.raises(DisabledWidgetError) as context:
             session.host.delete_interface(host_name, interface_id)
@@ -640,7 +652,9 @@ def test_positive_view_hosts_with_non_admin_user(
     """
     user_password = gen_string('alpha')
     role = target_sat.api.Role(organization=[module_org]).create()
-    create_role_permissions(role, {'Organization': ['view_organizations'], 'Host': ['view_hosts']})
+    target_sat.api_factory.create_role_permissions(
+        role, {'Organization': ['view_organizations'], 'Host': ['view_hosts']}
+    )
     user = target_sat.api.User(
         role=[role],
         admin=False,
@@ -678,7 +692,7 @@ def test_positive_remove_parameter_non_admin_user(
     user_password = gen_string('alpha')
     parameter = {'name': gen_string('alpha'), 'value': gen_string('alpha')}
     role = target_sat.api.Role(organization=[module_org]).create()
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         role,
         {
             'Parameter': PERMISSIONS['Parameter'],
@@ -735,7 +749,7 @@ def test_negative_remove_parameter_non_admin_user(
     user_password = gen_string('alpha')
     parameter = {'name': gen_string('alpha'), 'value': gen_string('alpha')}
     role = target_sat.api.Role(organization=[module_org]).create()
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         role,
         {
             'Parameter': ['view_params'],
@@ -803,7 +817,7 @@ def test_positive_check_permissions_affect_create_procedure(
     filter_hg = target_sat.api.HostGroup(organization=[function_org]).create()
     # Create lifecycle environment permissions and select one specific
     # environment user will have access to
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         function_role,
         {
             'Katello::KTEnvironment': [
@@ -815,7 +829,7 @@ def test_positive_check_permissions_affect_create_procedure(
         search=f'name = {filter_lc_env.name}',
     )
     # Add necessary permissions for content view as we did for lce
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         function_role,
         {
             'Katello::ContentView': [
@@ -828,21 +842,21 @@ def test_positive_check_permissions_affect_create_procedure(
         search=f'name = {filter_cv.name}',
     )
     # Add necessary permissions for hosts as we did for lce
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         function_role,
         {'Host': ['create_hosts', 'view_hosts']},
         # allow access only to the mentioned here host group
         search=f'hostgroup_fullname = {filter_hg.name}',
     )
     # Add necessary permissions for host groups as we did for lce
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         function_role,
         {'Hostgroup': ['view_hostgroups']},
         # allow access only to the mentioned here host group
         search=f'name = {filter_hg.name}',
     )
     # Add permissions for Organization and Location
-    create_role_permissions(
+    target_sat.api_factory.create_role_permissions(
         function_role,
         {'Organization': PERMISSIONS['Organization'], 'Location': PERMISSIONS['Location']},
     )
@@ -1088,9 +1102,7 @@ def test_positive_search_by_org(session, smart_proxy_location, target_sat):
 
 
 @pytest.mark.tier2
-def test_positive_validate_inherited_cv_lce(
-    session, module_host_template, target_sat, default_smart_proxy
-):
+def test_positive_validate_inherited_cv_lce(session, target_sat, module_host_template):
     """Create a host with hostgroup specified via CLI. Make sure host
     inherited hostgroup's lifecycle environment, content view and both
     fields are properly reflected via WebUI.
@@ -1106,7 +1118,7 @@ def test_positive_validate_inherited_cv_lce(
     """
     cv_name = gen_string('alpha')
     lce_name = gen_string('alphanumeric')
-    cv = cv_publish_promote(
+    cv = target_sat.api_factory.cv_publish_promote(
         name=cv_name, env_name=lce_name, org_id=module_host_template.organization.id
     )
     lce = (
@@ -1184,7 +1196,7 @@ def test_positive_global_registration_form(
                 'general.insecure': True,
                 'general.host_group': hostgroup.name,
                 'general.operating_system': default_os.title,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'advanced.update_packages': True,
                 'advanced.rex_interface': iface,
             }
@@ -1206,6 +1218,7 @@ def test_positive_global_registration_form(
         assert pair in cmd
 
 
+@pytest.mark.no_containers
 @pytest.mark.tier3
 @pytest.mark.rhel_ver_match('[^6]')
 def test_positive_global_registration_end_to_end(
@@ -1258,7 +1271,7 @@ def test_positive_global_registration_end_to_end(
         cmd = session.host.get_register_command(
             {
                 'general.operating_system': default_os.title,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'advanced.update_packages': True,
                 'advanced.rex_interface': iface,
                 'general.insecure': True,
@@ -1329,7 +1342,7 @@ def test_positive_global_registration_end_to_end(
         .read()
     )
     # make sure that task is finished
-    task_result = wait_for_tasks(
+    task_result = target_sat.wait_for_tasks(
         search_query=(f'id = {result.task.id}'), search_rate=2, max_tries=60
     )
     assert task_result[0].result == 'success'
@@ -1408,7 +1421,7 @@ def test_global_registration_form_populate(
         )
 
         assert hg_name in cmd['general']['host_group']
-        assert module_ak_with_cv.name in cmd['advanced']['activation_key_helper']
+        assert module_ak_with_cv.name in cmd['general']['activation_key_helper']
         assert module_lce.name in cmd['advanced']['life_cycle_env_helper']
         assert constants.FAKE_0_CUSTOM_PACKAGE in cmd['advanced']['install_packages_helper']
 
@@ -1499,7 +1512,7 @@ def test_global_registration_with_capsule_host(
                 'general.location': module_location.name,
                 'general.operating_system': default_os.title,
                 'general.capsule': capsule_configured.hostname,
-                'advanced.activation_keys': activation_key.name,
+                'general.activation_keys': activation_key.name,
                 'general.insecure': True,
             }
         )
@@ -1514,6 +1527,7 @@ def test_global_registration_with_capsule_host(
 
 @pytest.mark.tier2
 @pytest.mark.usefixtures('enable_capsule_for_registration')
+@pytest.mark.no_containers
 def test_global_registration_with_gpg_repo_and_default_package(
     session, module_activation_key, default_os, default_smart_proxy, rhel7_contenthost
 ):
@@ -1547,7 +1561,7 @@ def test_global_registration_with_gpg_repo_and_default_package(
             {
                 'general.operating_system': default_os.title,
                 'general.capsule': default_smart_proxy.name,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'general.insecure': True,
                 'advanced.force': True,
                 'advanced.install_packages': 'mlocate vim',
@@ -1611,7 +1625,7 @@ def test_global_registration_upgrade_subscription_manager(
         cmd = session.host.get_register_command(
             {
                 'general.operating_system': module_os.title,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'general.insecure': True,
                 'advanced.force': True,
                 'advanced.install_packages': 'subscription-manager',
@@ -1622,7 +1636,7 @@ def test_global_registration_upgrade_subscription_manager(
     # run curl
     result = client.execute(cmd)
     assert result.status == 0
-    result = client.execute('yum info subscription-manager | grep "From repo"')
+    result = client.execute('yum repolist')
     assert repo_name in result.stdout
     assert result.status == 0
 
@@ -1656,7 +1670,7 @@ def test_global_re_registration_host_with_force_ignore_error_options(
             {
                 'general.operating_system': default_os.title,
                 'general.capsule': default_smart_proxy.name,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'general.insecure': True,
                 'advanced.force': True,
                 'advanced.ignore_error': True,
@@ -1698,7 +1712,7 @@ def test_global_registration_token_restriction(
             {
                 'general.operating_system': default_os.title,
                 'general.capsule': default_smart_proxy.name,
-                'advanced.activation_keys': module_activation_key.name,
+                'general.activation_keys': module_activation_key.name,
                 'general.insecure': True,
             }
         )
@@ -1863,282 +1877,6 @@ def test_positive_delete_libvirt(
         assert not target_sat.api.Host().search(query={'search': f'name="{hostname}"'})
 
 
-@pytest.fixture
-def gce_template(googleclient):
-    max_rhel7_template = max(
-        img.name for img in googleclient.list_templates(True) if str(img.name).startswith('rhel-7')
-    )
-    return googleclient.get_template(max_rhel7_template, project='rhel-cloud').uuid
-
-
-@pytest.fixture
-def gce_cloudinit_template(googleclient, gce_cert):
-    return googleclient.get_template('customcinit', project=gce_cert['project_id']).uuid
-
-
-@pytest.fixture
-def gce_domain(module_org, smart_proxy_location, gce_cert, target_sat):
-    domain_name = f'{settings.gce.zone}.c.{gce_cert["project_id"]}.internal'
-    domain = target_sat.api.Domain().search(query={'search': f'name={domain_name}'})
-    if domain:
-        domain = domain[0]
-        domain.organization = [module_org]
-        domain.location = [smart_proxy_location]
-        domain.update(['organization', 'location'])
-    if not domain:
-        domain = target_sat.api.Domain(
-            name=domain_name, location=[smart_proxy_location], organization=[module_org]
-        ).create()
-    return domain
-
-
-@pytest.fixture
-def gce_resource_with_image(
-    gce_template,
-    gce_cloudinit_template,
-    gce_cert,
-    default_architecture,
-    default_os,
-    smart_proxy_location,
-    module_org,
-    target_sat,
-):
-    with Session('gce_tests') as session:
-        # Until the CLI and API support is added for GCE,
-        # creating GCE CR from UI
-        cr_name = gen_string('alpha')
-        vm_user = gen_string('alpha')
-        session.computeresource.create(
-            {
-                'name': cr_name,
-                'provider': FOREMAN_PROVIDERS['google'],
-                'provider_content.google_project_id': gce_cert['project_id'],
-                'provider_content.client_email': gce_cert['client_email'],
-                'provider_content.certificate_path': settings.gce.cert_path,
-                'provider_content.zone.value': settings.gce.zone,
-                'organizations.resources.assigned': [module_org.name],
-                'locations.resources.assigned': [smart_proxy_location.name],
-            }
-        )
-    gce_cr = target_sat.api.AbstractComputeResource().search(query={'search': f'name={cr_name}'})[0]
-    # Finish Image
-    target_sat.api.Image(
-        architecture=default_architecture,
-        compute_resource=gce_cr,
-        name='autogce_img',
-        operatingsystem=default_os,
-        username=vm_user,
-        uuid=gce_template,
-    ).create()
-    # Cloud-Init Image
-    target_sat.api.Image(
-        architecture=default_architecture,
-        compute_resource=gce_cr,
-        name='autogce_img_cinit',
-        operatingsystem=default_os,
-        username=vm_user,
-        uuid=gce_cloudinit_template,
-        user_data=True,
-    ).create()
-    return gce_cr
-
-
-@pytest.fixture
-def gce_hostgroup(
-    module_org,
-    smart_proxy_location,
-    default_partition_table,
-    default_architecture,
-    default_os,
-    gce_domain,
-    gce_resource_with_image,
-    module_lce,
-    module_cv_repo,
-    target_sat,
-):
-    return target_sat.api.HostGroup(
-        architecture=default_architecture,
-        compute_resource=gce_resource_with_image,
-        domain=gce_domain,
-        lifecycle_environment=module_lce,
-        content_view=module_cv_repo,
-        location=[smart_proxy_location],
-        operatingsystem=default_os,
-        organization=[module_org],
-        ptable=default_partition_table,
-    ).create()
-
-
-@pytest.mark.tier4
-@pytest.mark.run_in_one_thread
-@pytest.mark.skip_if_not_set('gce')
-@pytest.mark.parametrize('setting_update', ['destroy_vm_on_host_delete'], indirect=True)
-def test_positive_gce_provision_end_to_end(
-    session,
-    target_sat,
-    module_org,
-    smart_proxy_location,
-    default_os,
-    gce_domain,
-    gce_hostgroup,
-    googleclient,
-    setting_update,
-    remove_vm_on_delete,
-):
-    """Provision Host on GCE compute resource
-
-    :id: 8d1877bb-fbc2-4969-a13e-e95e4df4f4cd
-
-    :expectedresults: Host is provisioned successfully
-
-    :CaseLevel: System
-    """
-    name = f'test{gen_string("alpha", 4).lower()}'
-    hostname = f'{name}.{gce_domain.name}'
-    gceapi_vmname = hostname.replace('.', '-')
-    root_pwd = gen_string('alpha', 15)
-    storage = [{'size': 20}]
-    with Session('gce_tests') as session:
-        session.organization.select(org_name=module_org.name)
-        session.location.select(loc_name=smart_proxy_location.name)
-        # Provision GCE Host
-        try:
-            with target_sat.skip_yum_update_during_provisioning(
-                template='Kickstart default finish'
-            ):
-                session.host.create(
-                    {
-                        'host.name': name,
-                        'host.hostgroup': gce_hostgroup.name,
-                        'provider_content.virtual_machine.machine_type': 'g1-small',
-                        'provider_content.virtual_machine.external_ip': True,
-                        'provider_content.virtual_machine.network': 'default',
-                        'provider_content.virtual_machine.storage': storage,
-                        'operating_system.operating_system': default_os.title,
-                        'operating_system.image': 'autogce_img',
-                        'operating_system.root_password': root_pwd,
-                    }
-                )
-                wait_for(
-                    lambda: target_sat.api.Host()
-                    .search(query={'search': f'name={hostname}'})[0]
-                    .build_status_label
-                    != 'Pending installation',
-                    timeout=600,
-                    delay=15,
-                    silent_failure=True,
-                    handle_exception=True,
-                )
-                # 1. Host Creation Assertions
-                # 1.1 UI based Assertions
-                host_info = session.host.get_details(hostname)
-                assert session.host.search(hostname)[0]['Name'] == hostname
-                assert host_info['properties']['properties_table']['Build'] == 'Installed clear'
-                # 1.2 GCE Backend Assertions
-                gceapi_vm = googleclient.get_vm(gceapi_vmname)
-                assert gceapi_vm.is_running
-                assert gceapi_vm
-                assert gceapi_vm.name == gceapi_vmname
-                assert gceapi_vm.zone == settings.gce.zone
-                assert gceapi_vm.ip == host_info['properties']['properties_table']['IP Address']
-                assert 'g1-small' in gceapi_vm.raw['machineType'].split('/')[-1]
-                assert 'default' in gceapi_vm.raw['networkInterfaces'][0]['network'].split('/')[-1]
-                # 2. Host Deletion Assertions
-                session.host.delete(hostname)
-                assert not target_sat.api.Host().search(query={'search': f'name="{hostname}"'})
-                # 2.2 GCE Backend Assertions
-                assert gceapi_vm.is_stopping or gceapi_vm.is_stopped
-        except Exception as error:
-            gcehost = target_sat.api.Host().search(query={'search': f'name={hostname}'})
-            if gcehost:
-                gcehost[0].delete()
-            raise error
-        finally:
-            googleclient.disconnect()
-
-
-@pytest.mark.tier4
-@pytest.mark.upgrade
-@pytest.mark.run_in_one_thread
-@pytest.mark.skip_if_not_set('gce')
-@pytest.mark.parametrize('setting_update', ['destroy_vm_on_host_delete'], indirect=True)
-def test_positive_gce_cloudinit_provision_end_to_end(
-    session,
-    target_sat,
-    module_org,
-    smart_proxy_location,
-    default_os,
-    gce_domain,
-    gce_hostgroup,
-    googleclient,
-    setting_update,
-    remove_vm_on_delete,
-):
-    """Provision Host on GCE compute resource
-
-    :id: 6ee63ec6-2e8e-4ed6-ae48-e68b078233c6
-
-    :expectedresults: Host is provisioned successfully
-
-    :CaseLevel: System
-    """
-    name = f'test{gen_string("alpha", 4).lower()}'
-    hostname = f'{name}.{gce_domain.name}'
-    gceapi_vmname = hostname.replace('.', '-')
-    storage = [{'size': 20}]
-    root_pwd = gen_string('alpha', random.choice([8, 15]))
-    with Session('gce_tests') as session:
-        session.organization.select(org_name=module_org.name)
-        session.location.select(loc_name=smart_proxy_location.name)
-        # Provision GCE Host
-        try:
-            with target_sat.skip_yum_update_during_provisioning(
-                template='Kickstart default user data'
-            ):
-                session.host.create(
-                    {
-                        'host.name': name,
-                        'host.hostgroup': gce_hostgroup.name,
-                        'provider_content.virtual_machine.machine_type': 'g1-small',
-                        'provider_content.virtual_machine.external_ip': True,
-                        'provider_content.virtual_machine.network': 'default',
-                        'provider_content.virtual_machine.storage': storage,
-                        'operating_system.operating_system': default_os.title,
-                        'operating_system.image': 'autogce_img_cinit',
-                        'operating_system.root_password': root_pwd,
-                    }
-                )
-                # 1. Host Creation Assertions
-                # 1.1 UI based Assertions
-                host_info = session.host.get_details(hostname)
-                assert session.host.search(hostname)[0]['Name'] == hostname
-                assert (
-                    host_info['properties']['properties_table']['Build']
-                    == 'Pending installation clear'
-                )
-                # 1.2 GCE Backend Assertions
-                gceapi_vm = googleclient.get_vm(gceapi_vmname)
-                assert gceapi_vm
-                assert gceapi_vm.is_running
-                assert gceapi_vm.name == gceapi_vmname
-                assert gceapi_vm.zone == settings.gce.zone
-                assert gceapi_vm.ip == host_info['properties']['properties_table']['IP Address']
-                assert 'g1-small' in gceapi_vm.raw['machineType'].split('/')[-1]
-                assert 'default' in gceapi_vm.raw['networkInterfaces'][0]['network'].split('/')[-1]
-                # 2. Host Deletion Assertions
-                session.host.delete(hostname)
-                assert not target_sat.api.Host().search(query={'search': f'name="{hostname}"'})
-                # 2.2 GCE Backend Assertions
-                assert gceapi_vm.is_stopping or gceapi_vm.is_stopped
-        except Exception as error:
-            gcehost = target_sat.api.Host().search(query={'search': f'name={hostname}'})
-            if gcehost:
-                gcehost[0].delete()
-            raise error
-        finally:
-            googleclient.disconnect()
-
-
 # ------------------------------ NEW HOST UI DETAILS ----------------------------
 @pytest.mark.tier4
 def test_positive_read_details_page_from_new_ui(session, host_ui_options):
@@ -2151,12 +1889,16 @@ def test_positive_read_details_page_from_new_ui(session, host_ui_options):
     :CaseLevel: System
     """
     with session:
-        values, host_name = host_ui_options
-        session.host_new.create(values)
+        api_values, host_name = host_ui_options
+        session.location.select(api_values['host.location'])
+        session.host_new.create(api_values)
         assert session.host_new.search(host_name)[0]['Name'] == host_name
         values = session.host_new.get_details(host_name, widget_names='overview')
         assert values['overview']['host_status']['status'] == 'All statuses OK'
-        assert values['overview']['details']['details']['mac_address'] == module_host_template.mac
+        assert (
+            values['overview']['details']['details']['mac_address']
+            == api_values['interfaces.interface.mac']
+        )
         user = session.host_new.get_details(host_name, widget_names='current_user')['current_user']
         assert values['overview']['details']['details']['host_owner'] == user
         assert values['overview']['details']['details']['comment'] == 'Host with fake data'
@@ -2189,7 +1931,7 @@ def test_rex_new_ui(session, target_sat, rex_contenthost):
     with session:
         session.location.select(loc_name=DEFAULT_LOC)
         session.host_new.schedule_job(hostname, job_args)
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Remote action: Run ls on {hostname}'),
             search_rate=2,
             max_tries=30,
@@ -2202,13 +1944,83 @@ def test_rex_new_ui(session, target_sat, rex_contenthost):
 
 
 @pytest.mark.tier4
+def test_positive_manage_table_columns(session):
+    """Set custom columns of the hosts table.
+
+    :id: e5e18982-cc43-11ed-8562-000c2989e153
+
+    :steps:
+        1. Navigate to the Hosts page.
+        2. Switch to default organization and location, where is at least one host (Satellite).
+        3. Set custom columns for the hosts table via the 'Manage columns' dialog.
+
+    :expectedresults: Check if the custom columns were set properly, i.e., are displayed
+        or not displayed in the table.
+
+    :CaseLevel: System
+    """
+    columns = {
+        'Host group': False,
+        'Last report': False,
+        'Comment': False,
+        'Installable updates': True,
+        'Registered': True,
+        'Last checkin': True,
+        'IPv4': True,
+        'MAC': True,
+        'Sockets': True,
+        'Cores': True,
+        'RAM': True,
+        'Boot time': True,
+        'Recommendations': False,
+    }
+    with session:
+        session.organization.select(org_name=DEFAULT_ORG)
+        session.location.select(loc_name=DEFAULT_LOC)
+        session.host.manage_table_columns(columns)
+        displayed_columns = session.host.get_displayed_table_headers()
+        for column, is_displayed in columns.items():
+            assert (column in displayed_columns) is is_displayed
+
+
+@pytest.mark.tier4
+def test_positive_host_details_read_templates(session, target_sat):
+    """Check if all assigned host provisioning templates are correctly reported
+    in host detail / Details tab / Provisioning templates card.
+
+    :id: 43ca722e-d28a-11ed-8970-000c2989e153
+
+    :steps:
+        1. Go to Hosts page and select the Satellite host machine.
+        2. Go to the Details tab.
+        3. Gather all names from the `Provisioning templates` card.
+        4. Compare them with the host provisioning templates obtained via API.
+
+    :expectedresults: Provisioning templates reported via API and in UI should match.
+
+    :CaseLevel: System
+    """
+    host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
+    api_templates = [template['name'] for template in host.list_provisioning_templates()]
+    with session:
+        session.organization.select(org_name=DEFAULT_ORG)
+        session.location.select(loc_name=DEFAULT_LOC)
+        host_detail = session.host_new.get_details(target_sat.hostname, widget_names='details')
+        ui_templates = [
+            row['column1'].strip()
+            for row in host_detail['details']['provisioning_templates']['templates_table']
+        ]
+    assert set(api_templates) == set(ui_templates)
+
+
+@pytest.mark.tier4
 @pytest.mark.rhel_ver_match('8')
+@pytest.mark.no_containers
 @pytest.mark.parametrize(
-    'module_repos_collection_with_manifest',
+    'module_repos_collection_with_setup',
     [
         {
             'distro': 'rhel8',
-            'SatelliteToolsRepository': {},
             'YumRepository': {'url': settings.repos.yum_3.url},
         }
     ],
@@ -2219,7 +2031,7 @@ def test_positive_update_delete_package(
     session,
     target_sat,
     rhel_contenthost,
-    module_repos_collection_with_manifest,
+    module_repos_collection_with_setup,
 ):
     """Update a package on a host using the new Content tab
 
@@ -2227,24 +2039,46 @@ def test_positive_update_delete_package(
 
     :steps:
         1. Navigate to the Content tab.
-        2. Install a package on a registered host.
-        3. Downgrade package version
-        4. Check if the package is in an upgradable state.
-        5. Select package and upgrade via rex.
-        6. Delete the package
+        2. Disable repository set
+        3. Package from repository cannot be installed
+        4. Enable repository set
+        5. Install a package on a registered host.
+        6. Downgrade package version
+        7. Check if the package is in an upgradable state.
+        8. Select package and upgrade via rex.
+        9. Delete the package
 
     :expectedresults: The package is updated and deleted
 
     """
     client = rhel_contenthost
     client.add_rex_key(target_sat)
-    module_repos_collection_with_manifest.setup_virtual_machine(client, target_sat)
+    module_repos_collection_with_setup.setup_virtual_machine(
+        client, target_sat, install_katello_agent=False
+    )
     with session:
         session.location.select(loc_name=DEFAULT_LOC)
+        if not is_open('BZ:2132680'):
+            product_name = module_repos_collection_with_setup.custom_product.name
+            repos = session.host_new.get_repo_sets(client.hostname, product_name)
+            assert 'Enabled' == repos[0].status
+            session.host_new.override_repo_sets(
+                client.hostname, product_name, "Override to disabled"
+            )
+            assert 'Disabled' == repos[0].status
+            session.host_new.install_package(client.hostname, FAKE_8_CUSTOM_PACKAGE_NAME)
+            result = client.run(f'yum install -y {FAKE_7_CUSTOM_PACKAGE}')
+            assert result.status != 0
+            session.host_new.override_repo_sets(
+                client.hostname, product_name, "Override to enabled"
+            )
+            assert 'Enabled' == repos[0].status
+            # refresh repos on system
+            client.run('subscription-manager repos')
         # install package
         session.host_new.install_package(client.hostname, FAKE_8_CUSTOM_PACKAGE_NAME)
-        task_result = wait_for_tasks(
-            search_query=(f'Install package(s) {FAKE_8_CUSTOM_PACKAGE_NAME} on {client.hostname}'),
+        task_result = target_sat.wait_for_tasks(
+            search_query=(f'Install package(s) on {client.hostname}'),
             search_rate=4,
             max_tries=60,
         )
@@ -2275,7 +2109,7 @@ def test_positive_update_delete_package(
         session.host_new.apply_package_action(
             client.hostname, FAKE_8_CUSTOM_PACKAGE_NAME, "Upgrade via remote execution"
         )
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Update package(s) {FAKE_8_CUSTOM_PACKAGE_NAME} on {client.hostname}'),
             search_rate=2,
             max_tries=60,
@@ -2287,7 +2121,7 @@ def test_positive_update_delete_package(
 
         # remove package
         session.host_new.apply_package_action(client.hostname, FAKE_8_CUSTOM_PACKAGE_NAME, "Remove")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Remove package(s) {FAKE_8_CUSTOM_PACKAGE_NAME} on {client.hostname}'),
             search_rate=2,
             max_tries=60,
@@ -2302,12 +2136,12 @@ def test_positive_update_delete_package(
 
 @pytest.mark.tier4
 @pytest.mark.rhel_ver_match('8')
+@pytest.mark.no_containers
 @pytest.mark.parametrize(
-    'module_repos_collection_with_manifest',
+    'module_repos_collection_with_setup',
     [
         {
             'distro': 'rhel8',
-            'SatelliteToolsRepository': {},
             'YumRepository': {'url': settings.repos.yum_3.url},
         }
     ],
@@ -2318,7 +2152,7 @@ def test_positive_apply_erratum(
     session,
     target_sat,
     rhel_contenthost,
-    module_repos_collection_with_manifest,
+    module_repos_collection_with_setup,
 ):
     """Apply an erratum on a host using the new Errata tab
 
@@ -2340,7 +2174,9 @@ def test_positive_apply_erratum(
     # install package
     client = rhel_contenthost
     client.add_rex_key(target_sat)
-    module_repos_collection_with_manifest.setup_virtual_machine(client, target_sat)
+    module_repos_collection_with_setup.setup_virtual_machine(
+        client, target_sat, install_katello_agent=False
+    )
     errata_id = settings.repos.yum_3.errata[25]
     client.run(f'yum install -y {FAKE_7_CUSTOM_PACKAGE}')
     result = client.run(f'rpm -q {FAKE_7_CUSTOM_PACKAGE}')
@@ -2361,9 +2197,10 @@ def test_positive_apply_erratum(
         assert erratas['content']['errata']['table'][0]['Errata'] == errata_id
         # apply errata
         session.host_new.apply_erratas(client.hostname, f"errata_id == {errata_id}")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(
-                f'"Install errata errata_id == {errata_id.lower()} on {client.hostname}"'
+                f'"Install errata errata_id == {errata_id.lower()} '
+                f'and type=security on {client.hostname}"'
             ),
             search_rate=2,
             max_tries=60,
@@ -2381,12 +2218,12 @@ def test_positive_apply_erratum(
 
 @pytest.mark.tier4
 @pytest.mark.rhel_ver_match('8')
+@pytest.mark.no_containers
 @pytest.mark.parametrize(
-    'module_repos_collection_with_manifest',
+    'module_repos_collection_with_setup',
     [
         {
             'distro': 'rhel8',
-            'SatelliteToolsRepository': {},
             'YumRepository': {'url': settings.repos.module_stream_1.url},
         }
     ],
@@ -2397,7 +2234,7 @@ def test_positive_crud_module_streams(
     session,
     target_sat,
     rhel_contenthost,
-    module_repos_collection_with_manifest,
+    module_repos_collection_with_setup,
 ):
     """CRUD test for the Module streams new UI tab
 
@@ -2419,7 +2256,9 @@ def test_positive_crud_module_streams(
     module_name = 'duck'
     client = rhel_contenthost
     client.add_rex_key(target_sat)
-    module_repos_collection_with_manifest.setup_virtual_machine(client, target_sat)
+    module_repos_collection_with_setup.setup_virtual_machine(
+        client, target_sat, install_katello_agent=False
+    )
     with session:
         session.location.select(loc_name=DEFAULT_LOC)
         streams = session.host_new.get_module_streams(client.hostname, module_name)
@@ -2428,7 +2267,7 @@ def test_positive_crud_module_streams(
 
         # enable module stream
         session.host_new.apply_module_streams_action(client.hostname, module_name, "Enable")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Module enable {module_name} on {client.hostname}'),
             search_rate=5,
             max_tries=60,
@@ -2441,7 +2280,7 @@ def test_positive_crud_module_streams(
 
         # install
         session.host_new.apply_module_streams_action(client.hostname, module_name, "Install")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Module install {module_name} on {client.hostname}'),
             search_rate=5,
             max_tries=60,
@@ -2453,7 +2292,7 @@ def test_positive_crud_module_streams(
 
         # remove
         session.host_new.apply_module_streams_action(client.hostname, module_name, "Remove")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Module remove {module_name} on {client.hostname}'),
             search_rate=5,
             max_tries=60,
@@ -2465,13 +2304,15 @@ def test_positive_crud_module_streams(
         assert streams[0]['Installation status'] == 'Not installed'
 
         session.host_new.apply_module_streams_action(client.hostname, module_name, "Reset")
-        task_result = wait_for_tasks(
+        task_result = target_sat.wait_for_tasks(
             search_query=(f'Module reset {module_name} on {client.hostname}'),
             search_rate=5,
             max_tries=60,
         )
         task_status = target_sat.api.ForemanTask(id=task_result[0].id).poll()
         assert task_status['result'] == 'success'
+        # this should reload page to update module streams table
+        session.host_new.get_details(client.hostname, widget_names='overview')
         streams = session.host_new.get_module_streams(client.hostname, module_name)
         assert streams[0]['State'] == 'Default'
         assert streams[0]['Installation status'] == 'Not installed'
@@ -2550,7 +2391,6 @@ def test_positive_create_with_puppet_class(
     module_env_search,
     module_import_puppet_module,
     module_puppet_enabled_proxy_with_loc,
-    host_ui_options,
 ):
     """Create new Host with puppet class assigned to it
 
@@ -2565,17 +2405,35 @@ def test_positive_create_with_puppet_class(
         organization=module_puppet_org, location=module_puppet_loc
     )
     host_template.create_missing()
-
+    host_name = f'{host_template.name}.{host_template.domain.name}'
+    os_name = f'{host_template.operatingsystem.name} {host_template.operatingsystem.major}'
+    values = {
+        'host.name': host_template.name,
+        'host.organization': host_template.organization.name,
+        'host.location': host_template.location.name,
+        'host.lce': ENVIRONMENT,
+        'host.content_view': DEFAULT_CV,
+        'operating_system.architecture': host_template.architecture.name,
+        'operating_system.operating_system': os_name,
+        'operating_system.media_type': 'All Media',
+        'operating_system.media': host_template.medium.name,
+        'operating_system.ptable': host_template.ptable.name,
+        'operating_system.root_password': host_template.root_pass,
+        'interfaces.interface.interface_type': 'Interface',
+        'interfaces.interface.device_identifier': gen_string('alpha'),
+        'interfaces.interface.mac': host_template.mac,
+        'interfaces.interface.domain': host_template.domain.name,
+        'interfaces.interface.primary': True,
+        'interfaces.interface.interface_additional_data.virtual_nic': False,
+        'parameters.global_params': None,
+        'parameters.host_params': None,
+        'additional_information.comment': 'Host with fake data',
+        'host.puppet_environment': module_env_search.name,
+        'puppet_enc.classes.assigned': [module_import_puppet_module['puppet_class']],
+    }
     with session_puppet_enabled_sat.ui_session() as session:
         session.organization.select(org_name=module_puppet_org.name)
-        session.location.select(loc_name='Any Location')
-        values, host_name = host_ui_options
-        values.update(
-            {
-                'host.puppet_environment': module_env_search.name,
-                'puppet_enc.classes.assigned': [module_import_puppet_module['puppet_class']],
-            },
-        )
+        session.location.select(loc_name=ANY_CONTEXT['location'])
         session.host.create(values)
         assert session.host.search(host_name)[0]['Name'] == host_name
         values = session.host.read(host_name, widget_names='puppet_enc')
@@ -2702,115 +2560,46 @@ def test_positive_set_multi_line_and_with_spaces_parameter_value(
         assert host_parameters[param_name] == param_value
 
 
-class TestHostAnsible:
-    """Tests for Ansible portion of Hosts"""
+@pytest.mark.tier2
+@pytest.mark.rhel_ver_match('[^6].*')
+def test_positive_tracer_enable_reload(tracer_install_host, target_sat):
+    """Using the new Host UI,enable tracer and verify that the page reloads
 
-    @pytest.mark.stubbed
-    @pytest.mark.tier2
-    def test_positive_host_role_information(self):
-        """Assign Ansible Role to a Host and an attached Host group and verify that the information
-        in the new UI is displayed correctly
+    :id: c9ebd4a8-6db3-4d0e-92a2-14951c26769b
 
-        :id: 7da913ef-3b43-4bfa-9a45-d895431c8b56
+    :caseComponent: Katello-tracer
 
-        :caseComponent: Ansible
+    :Team: Phoenix
 
-        :assignee: sbible
+    :CaseLevel: System
 
-        :CaseLevel: System
+    :Steps:
+        1. Register a RHEL host to Satellite.
+        2. Prepare katello-tracer to be installed
+        3. Navigate to the Traces tab in New Host UI
+        4. Enable tracer using the popup
 
-        :Steps:
-            1. Register a RHEL host to Satellite.
-            2. Import all roles available by default.
-            3. Create a host group and assign one of the Ansible roles to the host group.
-            4. Assign the host to the host group.
-            5. Assign one role to the RHEL host.
-            6. Navigate to the new UI for the given Host.
-            7. Select the 'Ansible' tab, then the 'Inventory' sub-tab.
+    :expectedresults: The Tracer tab message updates accordingly during the process, and displays
+        the state the correct Title
 
-        :expectedresults: Roles assigned directly to the Host are visible on the subtab, and
-            roles assigned to the Host Group are visible by clicking the "view all assigned
-            roles" link
-
-        """
-
-    @pytest.mark.stubbed
-    @pytest.mark.tier2
-    def test_positive_role_variable_information(self):
-        """Create and assign variables to an Ansible Role and verify that the information in
-        the new UI is displayed correctly
-
-        :id: 4ab2813a-6b83-4907-b104-0473465814f5
-
-        :caseComponent: Ansible
-
-        :assignee: sbible
-
-        :CaseLevel: System
-
-        :Steps:
-            1. Register a RHEL host to Satellite.
-            2. Import all roles available by default.
-            3. Create a host group and assign one of the Ansible roles to the host group.
-            4. Assign the host to the host group.
-            5. Assign one roles to the RHEL host.
-            6. Create a variable and associate it with the role assigned to the Host.
-            7. Create a variable and associate it with the role assigned to the Hostgroup.
-            8. Navigate to the new UI for the given Host.
-            9. Select the 'Ansible' tab, then the 'Variables' sub-tab.
-
-        :expectedresults: The variables information for the given Host is visible.
-
-        """
-
-    @pytest.mark.stubbed
-    @pytest.mark.tier2
-    def test_positive_assign_role_in_new_ui(self):
-        """Using the new Host UI, assign a role to a Host
-
-        :id: 044f38b4-cff2-4ddc-b93c-7e9f2826d00d
-
-        :caseComponent: Ansible
-
-        :assignee: sbible
-
-        :CaseLevel: System
-
-        :Steps:
-            1. Register a RHEL host to Satellite.
-            2. Import all roles available by default.
-            3. Navigate to the new UI for the given Host.
-            4. Select the 'Ansible' tab
-            5. Click the 'Assign Ansible Roles' button.
-            6. Using the popup, assign a role to the Host.
-
-        :expectedresults: The Role is successfully assigned to the Host, and shows up on the UI
-
-        """
-
-    @pytest.mark.stubbed
-    @pytest.mark.tier2
-    def test_positive_remove_role_in_new_ui(self):
-        """Using the new Host UI, remove the role(s) of a Host
-
-        :id: d6de5130-45f6-4349-b490-fbde2aed082c
-
-        :caseComponent: Ansible
-
-        :assignee: sbible
-
-        :CaseLevel: System
-
-        :Steps:
-            1. Register a RHEL host to Satellite.
-            2. Import all roles available by default.
-            3. Assign a role to the host.
-            4. Navigate to the new UI for the given Host.
-            5. Select the 'Ansible' tab
-            6. Click the 'Edit Ansible roles' button.
-            7. Using the popup, remove the assigned role from the Host.
-
-        :expectedresults: The Role is successfully removed from the Host, and no longer shows
-            up on the UI
-
-        """
+    """
+    host = (
+        target_sat.api.Host().search(query={'search': tracer_install_host.hostname})[0].read_json()
+    )
+    with target_sat.ui_session() as session:
+        session.organization.select(host['organization_name'])
+        tracer = session.host_new.get_tracer(tracer_install_host.hostname)
+        assert tracer['title'] == "Traces are not enabled"
+        session.host_new.enable_tracer(tracer_install_host.hostname)
+        tracer = session.host_new.get_tracer(tracer_install_host.hostname)
+        assert tracer['title'] == "Traces are being enabled"
+        wait_for(
+            lambda: session.host_new.get_tracer(tracer_install_host.hostname)['title']
+            != "Traces are being enabled",
+            timeout=1800,
+            delay=5,
+            silent_failure=True,
+            handle_exception=True,
+        )
+        tracer = session.host_new.get_tracer(tracer_install_host.hostname)
+        assert tracer['title'] == "No applications to restart"

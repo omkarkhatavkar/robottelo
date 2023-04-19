@@ -8,7 +8,7 @@
 
 :CaseComponent: SCAPPlugin
 
-:Assignee: jpathan
+:Team: Rocket
 
 :TestType: Functional
 
@@ -31,10 +31,12 @@ def oscap_content_path(module_target_sat):
     _, file_name = os.path.split(settings.oscap.content_path)
 
     local_file = robottelo_tmp_dir.joinpath(file_name)
-    module_target_sat.get(remote_path=settings.oscap.content_path, local_path=local_file)
+    module_target_sat.get(remote_path=settings.oscap.content_path, local_path=str(local_file))
     return local_file
 
 
+@pytest.mark.skip_if_open("BZ:2167937")
+@pytest.mark.skip_if_open("BZ:2133151")
 @pytest.mark.tier1
 @pytest.mark.upgrade
 def test_positive_end_to_end(
@@ -84,6 +86,8 @@ def test_positive_end_to_end(
         assert not session.oscapcontent.search(new_title)
 
 
+@pytest.mark.skip_if_open("BZ:2167937")
+@pytest.mark.skip_if_open("BZ:2133151")
 @pytest.mark.tier1
 def test_negative_create_with_same_name(session, oscap_content_path, default_org, default_location):
     """Create OpenScap content with same name

@@ -8,7 +8,7 @@
 
 :CaseComponent: RemoteExecution
 
-:Assignee: pondrejk
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -23,6 +23,7 @@ from nailgun.entity_mixins import TaskFailedError
 
 from robottelo.config import get_credentials
 from robottelo.hosts import get_sat_version
+from robottelo.utils.issue_handlers import is_open
 
 CAPSULE_TARGET_VERSION = f'6.{get_sat_version().minor}.z'
 
@@ -41,14 +42,16 @@ def test_negative_run_capsule_upgrade_playbook_on_satellite(target_sat):
 
     :expectedresults: Should fail
 
+    :BZ: 2152951
+
     :CaseImportance: Medium
     """
-    template_id = (
-        target_sat.api.JobTemplate()
-        .search(query={'search': 'name="Capsule Upgrade Playbook"'})[0]
-        .id
+    template_name = (
+        'Smart Proxy Upgrade Playbook' if is_open('BZ:2152951') else 'Capsule Upgrade Playbook'
     )
-
+    template_id = (
+        target_sat.api.JobTemplate().search(query={'search': f'name="{template_name}"'})[0].id
+    )
     target_sat.add_rex_key(satellite=target_sat)
     with pytest.raises(TaskFailedError) as error:
         target_sat.api.JobInvocation().run(
@@ -78,8 +81,11 @@ def test_negative_run_capsule_upgrade_playbook_on_satellite(target_sat):
     assert 'This playbook cannot be executed on a Satellite server.' in response.text
 
 
-@pytest.mark.rhel_ver_list([7])
-def test_positive_use_alternate_directory(rex_contenthost, target_sat):
+@pytest.mark.no_containers
+@pytest.mark.rhel_ver_list([8])
+def test_positive_use_alternate_directory(
+    target_sat, rhel_contenthost, default_org, default_location
+):
     """Use alternate working directory on client to execute rex jobs
 
     :id: a0181f18-d3dc-4bd9-a2a6-430c2a49809e
@@ -90,7 +96,17 @@ def test_positive_use_alternate_directory(rex_contenthost, target_sat):
 
     :parametrized: yes
     """
-    client = rex_contenthost
+    client = rhel_contenthost
+    ak = target_sat.cli_factory.make_activation_key(
+        {
+            'lifecycle-environment': 'Library',
+            'content-view': 'Default Organization View',
+            'organization-id': default_org.id,
+            'auto-attach': False,
+        }
+    )
+    result = client.register(default_org, default_location, ak.name, satellite=target_sat)
+    assert result.status == 0, f'Failed to register host: {result.stderr}'
     testdir = gen_string('alpha')
     result = client.run(f'mkdir /{testdir}')
     assert result.status == 0

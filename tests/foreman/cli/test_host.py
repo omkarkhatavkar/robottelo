@@ -8,7 +8,7 @@
 
 :CaseComponent: Hosts
 
-:Assignee: pdragun
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -26,6 +26,7 @@ from fauxfactory import gen_integer
 from fauxfactory import gen_ipaddr
 from fauxfactory import gen_mac
 from fauxfactory import gen_string
+from wait_for import TimedOutError
 from wait_for import wait_for
 
 from robottelo.cli.activationkey import ActivationKey
@@ -57,6 +58,7 @@ from robottelo.hosts import ContentHostError
 from robottelo.utils.datafactory import invalid_values_list
 from robottelo.utils.datafactory import valid_data_list
 from robottelo.utils.datafactory import valid_hosts_list
+from robottelo.utils.issue_handlers import is_open
 
 
 @pytest.fixture(scope="module")
@@ -716,14 +718,14 @@ def test_positive_list_infrastructure_hosts(
     Host.update({'name': target_sat.hostname, 'new-organization-id': module_org.id})
     # list satellite hosts
     hosts = Host.list({'search': 'infrastructure_facet.foreman=true'})
-    assert len(hosts) == 1
+    assert len(hosts) == 2 if is_open('BZ:1994685') else len(hosts) == 1
     hostnames = [host['name'] for host in hosts]
     assert rhel7_contenthost.hostname not in hostnames
     assert target_sat.hostname in hostnames
     # list capsule hosts
     hosts = Host.list({'search': 'infrastructure_facet.smart_proxy_id=1'})
     hostnames = [host['name'] for host in hosts]
-    assert len(hosts) == 1
+    assert len(hosts) == 2 if is_open('BZ:1994685') else len(hosts) == 1
     assert rhel7_contenthost.hostname not in hostnames
     assert target_sat.hostname in hostnames
 
@@ -1569,8 +1571,18 @@ def test_positive_provision_baremetal_with_uefi_secureboot():
 
 
 @pytest.fixture(scope="function")
-def setup_custom_repo(target_sat, module_org, katello_host_tools_host):
+def setup_custom_repo(target_sat, module_org, katello_host_tools_host, request):
     """Create custom repository content"""
+
+    def restore_sca_setting():
+        """Restore the original SCA setting for module_org"""
+        module_org.sca_enable() if sca_enabled else module_org.sca_disable()
+
+    if module_org.sca_eligible().get('simple_content_access_eligible', False):
+        sca_enabled = module_org.simple_content_access
+        module_org.sca_disable()
+        request.addfinalizer(restore_sca_setting)
+
     # get package details
     details = {}
     if katello_host_tools_host.os_version.major == 6:
@@ -1772,7 +1784,7 @@ def test_positive_erratum_applicability(
     applicable_errata, _ = wait_for(
         lambda: Host.errata_list({'host-id': host_info['id']}),
         handle_exception=True,
-        failure_condition=[],
+        fail_condition=[],
         timeout=120,
         delay=5,
     )
@@ -1786,11 +1798,24 @@ def test_positive_erratum_applicability(
     result = client.run(f'yum update -y --advisory {setup_custom_repo["security_errata"]}')
     assert result.status == 0
     client.subscription_manager_list_repos()
-    applicable_erratum = Host.errata_list({'host-id': host_info['id']})
-    applicable_erratum_ids = [
-        errata['erratum-id'] for errata in applicable_erratum if errata['installable'] == 'true'
-    ]
-    assert setup_custom_repo["security_errata"] not in applicable_erratum_ids
+    # verify that the applied erratum is not present in the list of installable errata
+    try:
+        applicable_erratum, _ = wait_for(
+            lambda: setup_custom_repo["security_errata"]
+            not in [
+                errata['erratum-id']
+                for errata in Host.errata_list({'host-id': host_info['id']})
+                if errata['installable'] == 'true'
+            ],
+            handle_exception=True,
+            timeout=300,
+            delay=5,
+        )
+    except TimedOutError:
+        raise TimedOutError(
+            f"Timed out waiting for erratum \"{setup_custom_repo['security_errata']}\""
+            " to disappear from the list"
+        )
 
 
 @pytest.mark.cli_katello_host_tools
@@ -1988,6 +2013,7 @@ def test_positive_attach(
         {
             'host-id': host['id'],
             'subscription-id': default_subscription.id,
+            'quantity': 2,
         }
     )
     host_subscription_client.enable_repo(module_rhst_repo)
@@ -2034,6 +2060,7 @@ def test_positive_attach_with_lce(
         {
             'host-id': host['id'],
             'subscription-id': default_subscription.id,
+            'quantity': 2,
         }
     )
     host_subscription_client.enable_repo(module_rhst_repo)
@@ -2308,6 +2335,7 @@ def test_positive_unregister_host_subscription(
 @pytest.mark.pit_server
 @pytest.mark.cli_host_subscription
 @pytest.mark.tier3
+@pytest.mark.e2e
 def test_syspurpose_end_to_end(
     target_sat,
     module_org,
@@ -2538,7 +2566,7 @@ def test_positive_host_with_puppet(
 
 
 @pytest.fixture(scope="function")
-def function_proxy(session_puppet_enabled_sat):
+def function_proxy(session_puppet_enabled_sat, puppet_proxy_port_range):
     proxy = session_puppet_enabled_sat.cli_factory.make_proxy()
     yield proxy
     session_puppet_enabled_sat.cli.Proxy.delete({'id': proxy['id']})

@@ -10,9 +10,9 @@ No API doc exists for the subscription manager path(s). However, bugzilla bug
 
 :CaseLevel: Acceptance
 
-:CaseComponent: Candlepin
+:CaseComponent: SubscriptionManagement
 
-:Assignee: chiggins
+:team: Phoenix-subscriptions
 
 :TestType: Functional
 

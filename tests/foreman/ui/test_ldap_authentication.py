@@ -8,7 +8,7 @@
 
 :CaseComponent: LDAP
 
-:Assignee: vsedmik
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -25,13 +25,11 @@ from fauxfactory import gen_url
 from nailgun import entities
 from navmazing import NavigationTriesExceeded
 
-from robottelo.api.utils import create_role_permissions
 from robottelo.config import settings
+from robottelo.constants import ANY_CONTEXT
 from robottelo.constants import CERT_PATH
 from robottelo.constants import LDAP_ATTR
 from robottelo.constants import PERMISSIONS
-from robottelo.rhsso_utils import delete_rhsso_group
-from robottelo.rhsso_utils import run_command
 from robottelo.utils import ssh
 from robottelo.utils.datafactory import gen_string
 
@@ -109,11 +107,11 @@ def groups_teardown():
 
 
 @pytest.fixture()
-def rhsso_groups_teardown():
+def rhsso_groups_teardown(default_sso_host):
     """Teardown the rhsso groups"""
     yield
     for group_name in ('sat_users', 'sat_admins'):
-        delete_rhsso_group(group_name)
+        default_sso_host.delete_rhsso_group(group_name)
 
 
 @pytest.fixture()
@@ -260,7 +258,7 @@ def test_positive_create_org_and_loc(session, ldap_auth_source, ldap_tear_down):
 @pytest.mark.parametrize('ldap_auth_source', ['AD', 'IPA'], indirect=True)
 @pytest.mark.tier2
 def test_positive_add_katello_role(
-    test_name, session, ldap_usergroup_name, ldap_auth_source, ldap_tear_down
+    test_name, session, ldap_usergroup_name, ldap_auth_source, ldap_tear_down, target_sat
 ):
     """Associate katello roles to User Group.
     [belonging to external User Group.]
@@ -284,7 +282,7 @@ def test_positive_add_katello_role(
     ak_name = gen_string('alpha')
     user_permissions = {'Katello::ActivationKey': PERMISSIONS['Katello::ActivationKey']}
     katello_role = entities.Role().create()
-    create_role_permissions(katello_role, user_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, user_permissions)
     with session:
         session.usergroup.create(
             {
@@ -309,7 +307,7 @@ def test_positive_add_katello_role(
 @pytest.mark.upgrade
 @pytest.mark.tier2
 def test_positive_update_external_roles(
-    test_name, session, ldap_usergroup_name, ldap_auth_source, ldap_tear_down
+    test_name, session, ldap_usergroup_name, ldap_auth_source, ldap_tear_down, target_sat
 ):
     """Added AD UserGroup roles get pushed down to user
 
@@ -339,8 +337,8 @@ def test_positive_update_external_roles(
     katello_role = entities.Role().create()
     foreman_permissions = {'Location': PERMISSIONS['Location']}
     katello_permissions = {'Katello::ActivationKey': PERMISSIONS['Katello::ActivationKey']}
-    create_role_permissions(foreman_role, foreman_permissions)
-    create_role_permissions(katello_role, katello_permissions)
+    target_sat.api_factory.create_role_permissions(foreman_role, foreman_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, katello_permissions)
     with session:
         session.usergroup.create(
             {
@@ -374,7 +372,7 @@ def test_positive_update_external_roles(
 @pytest.mark.tier2
 @pytest.mark.upgrade
 def test_positive_delete_external_roles(
-    test_name, session, ldap_usergroup_name, ldap_tear_down, ldap_auth_source
+    test_name, session, ldap_usergroup_name, ldap_tear_down, ldap_auth_source, target_sat
 ):
     """Deleted AD UserGroup roles get pushed down to user
 
@@ -403,7 +401,7 @@ def test_positive_delete_external_roles(
     location_name = gen_string('alpha')
     foreman_role = entities.Role().create()
     foreman_permissions = {'Location': PERMISSIONS['Location']}
-    create_role_permissions(foreman_role, foreman_permissions)
+    target_sat.api_factory.create_role_permissions(foreman_role, foreman_permissions)
     with session:
         session.usergroup.create(
             {
@@ -435,7 +433,7 @@ def test_positive_delete_external_roles(
 @pytest.mark.parametrize('ldap_auth_source', ['AD', 'IPA'], indirect=True)
 @pytest.mark.tier2
 def test_positive_update_external_user_roles(
-    test_name, session, ldap_usergroup_name, ldap_tear_down, ldap_auth_source
+    test_name, session, ldap_usergroup_name, ldap_tear_down, ldap_auth_source, target_sat
 ):
     """Assure that user has roles/can access feature areas for
     additional roles assigned outside any roles assigned by his group
@@ -472,8 +470,8 @@ def test_positive_update_external_user_roles(
     katello_role = entities.Role().create()
     foreman_permissions = {'Location': PERMISSIONS['Location']}
     katello_permissions = {'Katello::ActivationKey': PERMISSIONS['Katello::ActivationKey']}
-    create_role_permissions(foreman_role, foreman_permissions)
-    create_role_permissions(katello_role, katello_permissions)
+    target_sat.api_factory.create_role_permissions(foreman_role, foreman_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, katello_permissions)
     with session:
         session.usergroup.create(
             {
@@ -490,7 +488,7 @@ def test_positive_update_external_user_roles(
             ldapsession.location.create({'name': location_name})
             location = entities.Location().search(query={'search': f'name="{location_name}"'})[0]
             assert location.name == location_name
-        session.location.select('Any Location')
+        session.location.select(ANY_CONTEXT['location'])
         session.user.update(
             ldap_data['ldap_user_name'], {'roles.resources.assigned': [katello_role.name]}
         )
@@ -571,6 +569,7 @@ def test_positive_add_foreman_role_with_org_loc(
     module_location,
     ldap_tear_down,
     ldap_auth_source,
+    module_target_sat,
 ):
     """Associate foreman roles to User Group with org and loc set.
     [belonging to external User Group.]
@@ -603,7 +602,7 @@ def test_positive_add_foreman_role_with_org_loc(
         'Organization': ['assign_organizations'],
     }
     foreman_role = entities.Role().create()
-    create_role_permissions(foreman_role, user_permissions)
+    module_target_sat.api_factory.create_role_permissions(foreman_role, user_permissions)
     with session:
         session.usergroup.create(
             {
@@ -637,6 +636,7 @@ def test_positive_add_katello_role_with_org(
     module_org,
     ldap_tear_down,
     ldap_auth_source,
+    target_sat,
 ):
     """Associate katello roles to User Group with org set.
     [belonging to external User Group.]
@@ -667,7 +667,7 @@ def test_positive_add_katello_role_with_org(
         'Organization': ['assign_organizations'],
     }
     katello_role = entities.Role().create()
-    create_role_permissions(katello_role, user_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, user_permissions)
     different_org = entities.Organization().create()
     with session:
         session.usergroup.create(
@@ -750,7 +750,9 @@ def test_positive_login_user_no_roles(test_name, ldap_tear_down, ldap_auth_sourc
 @pytest.mark.parametrize('ldap_auth_source', ['AD', 'IPA'], indirect=True)
 @pytest.mark.tier2
 @pytest.mark.upgrade
-def test_positive_login_user_basic_roles(test_name, session, ldap_tear_down, ldap_auth_source):
+def test_positive_login_user_basic_roles(
+    test_name, session, ldap_tear_down, ldap_auth_source, target_sat
+):
     """Login with LDAP for user with roles/rights
 
     :id: ef202e94-8e5d-4333-a4bc-e573b03ebfc8
@@ -768,7 +770,7 @@ def test_positive_login_user_basic_roles(test_name, session, ldap_tear_down, lda
     name = gen_string('alpha')
     role = entities.Role().create()
     permissions = {'Architecture': PERMISSIONS['Architecture']}
-    create_role_permissions(role, permissions)
+    target_sat.api_factory.create_role_permissions(role, permissions)
     with Session(
         test_name, ldap_data['ldap_user_name'], ldap_data['ldap_user_passwd']
     ) as ldapsession:
@@ -916,8 +918,8 @@ def test_email_of_the_user_should_be_copied(session, auth_source_ipa, ipa_data, 
 
     :expectedresults: Email is copied to Satellite:
     """
-    run_command(cmd=f'echo {settings.ipa.password} | kinit admin', hostname=settings.ipa.hostname)
-    result = run_command(
+    ssh.command(cmd=f'echo {settings.ipa.password} | kinit admin', hostname=settings.ipa.hostname)
+    result = ssh.command(
         cmd=f"ipa user-find --login {ipa_data['ldap_user_name']}",
         hostname=settings.ipa.hostname,
     )
@@ -1161,7 +1163,9 @@ def test_login_failure_if_internal_user_exist(
 
 @pytest.mark.skip_if_open("BZ:1812688")
 @pytest.mark.tier2
-def test_userlist_with_external_admin(session, auth_source_ipa, ldap_tear_down, groups_teardown):
+def test_userlist_with_external_admin(
+    session, auth_source_ipa, ldap_tear_down, groups_teardown, target_sat
+):
     """All the external users should be displayed to all LDAP admins (internal and external).
 
     :id: 7c7bf34a-06f9-11eb-b174-d46d6dd3b5b2
@@ -1193,7 +1197,7 @@ def test_userlist_with_external_admin(session, auth_source_ipa, ldap_tear_down, 
     auth_source_name = f'LDAP-{auth_source_ipa.name}'
     user_permissions = {'Katello::ActivationKey': PERMISSIONS['Katello::ActivationKey']}
     katello_role = entities.Role().create()
-    create_role_permissions(katello_role, user_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, user_permissions)
     with session:
         session.usergroup.create(
             {
@@ -1226,7 +1230,13 @@ def test_userlist_with_external_admin(session, auth_source_ipa, ldap_tear_down, 
 @pytest.mark.skip_if_open('BZ:1883209')
 @pytest.mark.tier2
 def test_positive_group_sync_open_ldap_authsource(
-    test_name, session, auth_source_open_ldap, ldap_usergroup_name, ldap_tear_down, open_ldap_data
+    test_name,
+    session,
+    auth_source_open_ldap,
+    ldap_usergroup_name,
+    ldap_tear_down,
+    open_ldap_data,
+    target_sat,
 ):
     """Associate katello roles to User Group. [belonging to external OpenLDAP User Group.]
 
@@ -1246,7 +1256,7 @@ def test_positive_group_sync_open_ldap_authsource(
     auth_source_name = f'LDAP-{auth_source_open_ldap.name}'
     user_permissions = {'Katello::ActivationKey': PERMISSIONS['Katello::ActivationKey']}
     katello_role = entities.Role().create()
-    create_role_permissions(katello_role, user_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, user_permissions)
     with session:
         session.usergroup.create(
             {
@@ -1270,7 +1280,12 @@ def test_positive_group_sync_open_ldap_authsource(
 
 @pytest.mark.tier2
 def test_verify_group_permissions(
-    session, auth_source_ipa, multigroup_setting_cleanup, groups_teardown, ldap_tear_down
+    session,
+    auth_source_ipa,
+    multigroup_setting_cleanup,
+    groups_teardown,
+    ldap_tear_down,
+    target_sat,
 ):
     """Verify group permission for external linked group
 
@@ -1291,7 +1306,7 @@ def test_verify_group_permissions(
     auth_source_name = f'LDAP-{auth_source_ipa.name}'
     user_permissions = {None: ['access_dashboard']}
     katello_role = entities.Role().create()
-    create_role_permissions(katello_role, user_permissions)
+    target_sat.api_factory.create_role_permissions(katello_role, user_permissions)
     with session:
         session.usergroup.create(
             {

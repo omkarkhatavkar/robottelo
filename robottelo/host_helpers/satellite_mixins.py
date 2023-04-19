@@ -1,4 +1,6 @@
 import contextlib
+import io
+import os
 import random
 import re
 
@@ -7,9 +9,29 @@ import requests
 from robottelo.cli.base import CLIReturnCodeError
 from robottelo.cli.proxy import CapsuleTunnelError
 from robottelo.config import settings
+from robottelo.constants import PULP_EXPORT_DIR
+from robottelo.constants import PULP_IMPORT_DIR
+from robottelo.constants import PUPPET_COMMON_INSTALLER_OPTS
+from robottelo.constants import PUPPET_SATELLITE_INSTALLER
 from robottelo.host_helpers.api_factory import APIFactory
 from robottelo.host_helpers.cli_factory import CLIFactory
 from robottelo.logging import logger
+from robottelo.utils.installer import InstallerCommand
+from robottelo.utils.manifest import clone
+
+
+class EnablePluginsSatellite:
+    """Miscellaneous settings helper methods"""
+
+    def enable_puppet_satellite(self):
+        enable_satellite_cmd = InstallerCommand(
+            installer_args=PUPPET_SATELLITE_INSTALLER,
+            installer_opts=PUPPET_COMMON_INSTALLER_OPTS,
+        )
+        result = self.execute(enable_satellite_cmd.get_command(), timeout='20m')
+        assert result.status == 0
+        assert 'Success!' in result.stdout
+        return self
 
 
 class ContentInfo:
@@ -107,6 +129,84 @@ class ContentInfo:
             f'wget -qO - {url} | tee {filename} | md5sum | awk \'{{print $1}}\''
         ).stdout
 
+    def upload_manifest(self, org_id, manifest=None, interface='API', timeout=None):
+        """Upload a manifest using the requested interface.
+
+        :type org_id: int
+        :type manifest: Manifester object or None
+        :type interface: str
+        :type timeout: int
+
+        :returns: the manifest upload result
+
+        """
+        if manifest is None:
+            manifest = clone()
+        if timeout is None:
+            # Set the timeout to 1500 seconds to align with the API timeout.
+            timeout = 1500000
+        if interface == 'CLI':
+            if isinstance(manifest.content, (bytes, io.BytesIO)):
+                self.put(f'{manifest.path}', f'{manifest.name}')
+                result = self.cli.Subscription.upload(
+                    {'file': manifest.name, 'organization-id': org_id}, timeout=timeout
+                )
+            else:
+                self.put(manifest, manifest.filename)
+                result = self.cli.Subscription.upload(
+                    {'file': manifest.filename, 'organization-id': org_id}, timeout=timeout
+                )
+        else:
+            if not isinstance(manifest, (bytes, io.BytesIO)):
+                manifest = manifest.content
+            result = self.api.Subscription().upload(
+                data={'organization_id': org_id}, files={'content': manifest}
+            )
+        return result
+
+    def is_sca_mode_enabled(self, org_id):
+        """This method checks whether Simple Content Access (SCA) mode is enabled for a
+        given organization.
+
+        :param str org_id: The unique identifier of the organization to check for SCA mode.
+        :returns: A boolean value indicating whether SCA mode is enabled or not.
+        :rtype: bool
+        """
+        return self.api.Organization(id=org_id).read().simple_content_access
+
+    def publish_content_view(self, org, repo_list):
+        """This method publishes the content view for a given organization and repository list.
+
+        :param str org: The name of the organization to which the content view belongs
+        :param list or str repo_list:  A list of repositories or a single repository
+
+        :returns: A dictionary containing the details of the published content view.
+        """
+        repo = repo_list if type(repo_list) is list else [repo_list]
+        content_view = self.api.ContentView(organization=org, repository=repo).create()
+        content_view.publish()
+        content_view = content_view.read()
+        return content_view
+
+    def move_pulp_archive(self, org, export_message):
+        """
+        Moves exported archive(s) and its metadata into import directory,
+        sets ownership, returns import path
+        """
+        self.execute(
+            f'mv {PULP_EXPORT_DIR}/{org.name} {PULP_IMPORT_DIR} && '
+            f'chown -R pulp:pulp {PULP_IMPORT_DIR}'
+        )
+
+        # removes everything before export path,
+        # replaces EXPORT_PATH by IMPORT_PATH,
+        # removes metadata filename
+        import_path = os.path.dirname(
+            re.sub(rf'.*{PULP_EXPORT_DIR}', PULP_IMPORT_DIR, export_message)
+        )
+
+        return import_path
+
 
 class SystemInfo:
     """Things that needs access to satellite shell for gaining satellite system configuration"""
@@ -196,6 +296,17 @@ class SystemInfo:
             finally:
                 logger.debug(f'Killing ncat pid: {ncat_pid}')
                 self.execute(f'kill {ncat_pid.pop()}')
+
+    def validate_pulp_filepath(
+        self,
+        org,
+        dir_path,
+        file_names=['*.json', '*.tar.gz'],
+    ):
+        """Checks the existence of certain files in a pulp dir"""
+        extension_query = ' -o '.join([f'-name "{file}"' for file in file_names])
+        result = self.execute(fr'find {dir_path}{org.name} -type f \( {extension_query} \)')
+        return result.stdout
 
 
 class Factories:

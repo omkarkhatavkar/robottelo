@@ -8,7 +8,7 @@
 
 :CaseComponent: Hosts
 
-:Assignee: pdragun
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -18,6 +18,8 @@
 """
 import pytest
 from airgun.exceptions import NoSuchElementException
+
+from robottelo.constants import ANY_CONTEXT
 
 
 class TestHostCockpit:
@@ -56,7 +58,7 @@ class TestHostCockpit:
         """
         with class_cockpit_sat.ui_session() as session:
             session.organization.select(org_name=class_org.name)
-            session.location.select(loc_name='Any Location')
+            session.location.select(loc_name=ANY_CONTEXT['location'])
             kill_process = class_cockpit_sat.execute('pkill -f cockpit-ws')
             assert kill_process.status == 0
             # Verify if getting 503 error

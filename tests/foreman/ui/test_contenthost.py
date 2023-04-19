@@ -8,7 +8,7 @@
 
 :CaseComponent: Hosts-Content
 
-:Assignee: shwsingh
+:team: Phoenix-subscriptions
 
 :TestType: Functional
 
@@ -27,7 +27,6 @@ from fauxfactory import gen_integer
 from fauxfactory import gen_string
 from nailgun import entities
 
-from robottelo.api.utils import wait_for_tasks
 from robottelo.cli.factory import CLIFactoryError
 from robottelo.cli.factory import make_fake_host
 from robottelo.cli.factory import make_virt_who_config
@@ -52,9 +51,19 @@ if not setting_is_set('clients') or not setting_is_set('fake_manifest'):
     pytest.skip('skipping tests due to missing settings', allow_module_level=True)
 
 
+@pytest.fixture(scope='module', autouse=True)
+def host_ui_default():
+    settings_object = entities.Setting().search(query={'search': 'name=host_details_ui'})[0]
+    settings_object.value = 'No'
+    settings_object.update({'value'})
+    yield
+    settings_object.value = 'Yes'
+    settings_object.update({'value'})
+
+
 @pytest.fixture(scope='module')
 def module_org():
-    org = entities.Organization().create()
+    org = entities.Organization(simple_content_access=False).create()
     # adding remote_execution_connect_by_ip=Yes at org level
     entities.Parameter(
         name='remote_execution_connect_by_ip',
@@ -95,14 +104,6 @@ def run_remote_command_on_content_host(command, vm_module_streams):
     result = vm_module_streams.run(command)
     assert result.status == 0
     return result
-
-
-@pytest.fixture(scope='module')
-def module_host_template(module_org, module_location):
-    host_template = entities.Host(organization=module_org, location=module_location)
-    host_template.create_missing()
-    host_template.name = None
-    return host_template
 
 
 @pytest.mark.tier3
@@ -284,7 +285,7 @@ def test_positive_end_to_end_bulk_update(session, default_location, vm, target_s
             action_via='via remote execution',
         )
         # Wait for applicability update event (in case Satellite system slow)
-        wait_for_tasks(
+        target_sat.wait_for_tasks(
             search_query='label = Actions::Katello::Applicability::Hosts::BulkGenerate'
             f' and started_at >= "{timestamp}"'
             f' and state = stopped'
@@ -1307,7 +1308,7 @@ def test_module_status_update_from_content_host_to_satellite(
     indirect=True,
 )
 def test_module_status_update_without_force_upload_package_profile(
-    session, default_location, vm_module_streams
+    session, default_location, vm_module_streams, target_sat
 ):
     """Verify you do not have to run dnf upload-profile or restart rhsmcertd
     to update the module stream status to Satellite and that the web UI will also be updated.
@@ -1335,7 +1336,7 @@ def test_module_status_update_without_force_upload_package_profile(
         vm_module_streams,
     )
     # Wait for applicability update event (in case Satellite system slow)
-    wait_for_tasks(
+    target_sat.wait_for_tasks(
         search_query='label = Actions::Katello::Applicability::Hosts::BulkGenerate'
         f' and started_at >= "{timestamp}"'
         f' and state = stopped'
@@ -1763,6 +1764,7 @@ def test_pagination_multiple_hosts_multiple_pages(session, module_host_template)
             }
         )
     with session(url=start_url):
+        session.location.select(module_host_template.location.name)
         # Search for all the hosts by os. This uses pagination to get more than one page.
         all_fake_hosts_found = session.contenthost.search(
             f'os = {module_host_template.operatingsystem.name}'

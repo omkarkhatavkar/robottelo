@@ -6,9 +6,9 @@
 
 :CaseLevel: Acceptance
 
-:CaseComponent: OrganizationsLocations
+:CaseComponent: OrganizationsandLocations
 
-:Assignee: shwsingh
+:Team: Endeavour
 
 :TestType: Functional
 

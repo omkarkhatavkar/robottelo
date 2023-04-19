@@ -8,7 +8,7 @@
 
 :CaseComponent: LifecycleEnvironments
 
-:Assignee: ltran
+:team: Phoenix-content
 
 :TestType: Functional
 

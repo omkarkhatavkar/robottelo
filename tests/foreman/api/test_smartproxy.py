@@ -8,7 +8,7 @@
 
 :CaseComponent: Capsule
 
-:Assignee: vsedmik
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -17,12 +17,14 @@
 :Upstream: No
 """
 import pytest
+from fauxfactory import gen_string
 from fauxfactory import gen_url
-from nailgun import entities
 from requests import HTTPError
 
+from robottelo.config import user_nailgun_config
 from robottelo.utils.datafactory import parametrized
 from robottelo.utils.datafactory import valid_data_list
+from robottelo.utils.issue_handlers import is_open
 
 
 pytestmark = [pytest.mark.run_in_one_thread]
@@ -35,7 +37,7 @@ def module_proxy_attrs(module_target_sat):
     Every Satellite has a built-in smart proxy, so searching for an
     existing smart proxy should always succeed.
     """
-    smart_proxy = entities.SmartProxy().search(
+    smart_proxy = module_target_sat.api.SmartProxy().search(
         query={'search': f'url = {module_target_sat.url}:9090'}
     )
     # Check that proxy is found and unpack it from the list
@@ -57,7 +59,7 @@ def _create_smart_proxy(request, target_sat, **kwargs):
 
 @pytest.mark.skip_if_not_set('fake_capsules')
 @pytest.mark.tier1
-def test_negative_create_with_url():
+def test_negative_create_with_url(target_sat):
     """Proxy creation with random URL
 
     :id: e48a6260-97e0-4234-a69c-77bbbcde85d6
@@ -69,7 +71,7 @@ def test_negative_create_with_url():
     """
     # Create a random proxy
     with pytest.raises(HTTPError) as context:
-        entities.SmartProxy(url=gen_url(scheme='https')).create()
+        target_sat.api.SmartProxy(url=gen_url(scheme='https')).create()
     assert 'Unable to communicate' in context.value.response.text
 
 
@@ -87,7 +89,10 @@ def test_positive_create_with_name(request, target_sat, name):
 
     :Parametrized: Yes
 
+    :BZ: 2084661
     """
+    if is_open('BZ:2084661') and 'html' in request.node.name:
+        pytest.skip()
     new_port = target_sat.available_capsule_port
     with target_sat.default_url_on_new_port(9090, new_port) as url:
         proxy = _create_smart_proxy(request, target_sat, name=name, url=url)
@@ -110,7 +115,7 @@ def test_positive_delete(target_sat):
     """
     new_port = target_sat.available_capsule_port
     with target_sat.default_url_on_new_port(9090, new_port) as url:
-        proxy = entities.SmartProxy(url=url).create()
+        proxy = target_sat.api.SmartProxy(url=url).create()
         proxy.delete()
     with pytest.raises(HTTPError):
         proxy.read()
@@ -173,7 +178,7 @@ def test_positive_update_organization(request, target_sat):
     :CaseLevel: Component
 
     """
-    organizations = [entities.Organization().create() for _ in range(2)]
+    organizations = [target_sat.api.Organization().create() for _ in range(2)]
     newport = target_sat.available_capsule_port
     with target_sat.default_url_on_new_port(9090, newport) as url:
         proxy = _create_smart_proxy(request, target_sat, url=url)
@@ -194,7 +199,7 @@ def test_positive_update_location(request, target_sat):
     :CaseLevel: Component
 
     """
-    locations = [entities.Location().create() for _ in range(2)]
+    locations = [target_sat.api.Location().create() for _ in range(2)]
     new_port = target_sat.available_capsule_port
     with target_sat.default_url_on_new_port(9090, new_port) as url:
         proxy = _create_smart_proxy(request, target_sat, url=url)
@@ -229,8 +234,14 @@ def test_positive_refresh_features(request, target_sat):
 
 @pytest.mark.skip_if_not_set('fake_capsules')
 @pytest.mark.tier2
-def test_positive_import_puppet_classes(session_puppet_enabled_sat, puppet_proxy_port_range):
-    """Import puppet classes from proxy
+def test_positive_import_puppet_classes(
+    request,
+    session_puppet_enabled_sat,
+    puppet_proxy_port_range,
+    module_puppet_org,
+    module_puppet_loc,
+):
+    """Import puppet classes from proxy for admin and non-admin user
 
     :id: 385efd1b-6146-47bf-babf-0127ce5955ed
 
@@ -238,20 +249,62 @@ def test_positive_import_puppet_classes(session_puppet_enabled_sat, puppet_proxy
 
     :CaseLevel: Integration
 
-    :BZ: 1398695
+    :BZ: 1398695, 2142555
+
+    :customerscenario: true
     """
-    with session_puppet_enabled_sat as puppet_sat:
-        new_port = puppet_sat.available_capsule_port
-        with puppet_sat.default_url_on_new_port(9090, new_port) as url:
-            proxy = entities.SmartProxy(url=url).create()
-            result = proxy.import_puppetclasses()
-            assert (
-                "Successfully updated environment and puppetclasses from "
-                "the on-disk puppet installation"
-            ) in result['message'] or "No changes to your environments detected" in result[
-                'message'
+    puppet_sat = session_puppet_enabled_sat
+    update_msg = (
+        'Successfully updated environment and puppetclasses from the on-disk puppet installation'
+    )
+    no_update_msg = 'No changes to your environments detected'
+    # Create role, add permissions and create non-admin user
+    user_login = gen_string('alpha')
+    user_password = gen_string('alpha')
+    role = puppet_sat.api.Role().create()
+    puppet_sat.api_factory.create_role_permissions(
+        role,
+        {
+            'ForemanPuppet::Puppetclass': [
+                'view_puppetclasses',
+                'create_puppetclasses',
+                'import_puppetclasses',
             ]
-        entities.SmartProxy(id=proxy.id).delete()
+        },
+    )
+    user = puppet_sat.api.User(
+        role=[role],
+        admin=True,
+        login=user_login,
+        password=user_password,
+        organization=[module_puppet_org],
+        location=[module_puppet_loc],
+    ).create()
+    request.addfinalizer(user.delete)
+    request.addfinalizer(role.delete)
+
+    new_port = puppet_sat.available_capsule_port
+    with puppet_sat.default_url_on_new_port(9090, new_port) as url:
+        proxy = puppet_sat.api.SmartProxy(url=url).create()
+
+        result = proxy.import_puppetclasses()
+        assert result['message'] in [update_msg, no_update_msg]
+        # Import puppetclasses with environment
+        result = proxy.import_puppetclasses(environment='production')
+        assert result['message'] in [update_msg, no_update_msg]
+
+        # Non-Admin user with access to import_puppetclasses
+        user_cfg = user_nailgun_config(user_login, user_password)
+        user_cfg.url = f'https://{puppet_sat.hostname}'
+        user_proxy = puppet_sat.api.SmartProxy(server_config=user_cfg, id=proxy.id).read()
+
+        result = user_proxy.import_puppetclasses()
+        assert result['message'] in [update_msg, no_update_msg]
+        # Import puppetclasses with environment
+        result = user_proxy.import_puppetclasses(environment='production')
+        assert result['message'] in [update_msg, no_update_msg]
+
+    request.addfinalizer(puppet_sat.api.SmartProxy(id=proxy.id).delete)
 
 
 """Tests to see if the server returns the attributes it should.
@@ -301,3 +354,24 @@ def test_positive_update_org(module_proxy_attrs):
     """
     names = {'organization', 'organization_ids', 'organizations'}
     assert len(names & module_proxy_attrs) >= 1, f'None of {names} are in {module_proxy_attrs}'
+
+
+@pytest.mark.skip_if_not_set('fake_capsules')
+@pytest.mark.tier1
+def test_positive_search_nondefault_proxy(request, target_sat):
+    """Search non-default proxy with id!=1
+
+    :id: caf51662-6b4e-11ed-baba-2b9d7b368002
+
+    :expectedresults: Non-default proxy can be searched
+
+    :BZ: 2077824
+
+    :customerscenario: true
+    """
+    with target_sat.default_url_on_new_port(9090, target_sat.available_capsule_port) as url:
+        proxy = _create_smart_proxy(request, target_sat, name=gen_string('alpha'), url=url)
+    capsules = target_sat.api.Capsule().search(query={'search': 'id != 1'})
+    assert len(capsules) == 1
+    assert capsules[0].url == proxy.url
+    assert capsules[0].name == proxy.name

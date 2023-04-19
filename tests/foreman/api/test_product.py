@@ -3,15 +3,15 @@
 An API reference for products can be found on your Satellite:
 http://<sat6>/apidoc/v2/products.html
 
-:Requirement: Product
+:Requirement: Repository
 
 :CaseAutomation: Automated
 
 :CaseLevel: Component
 
-:CaseComponent: ContentManagement
+:CaseComponent: Repositories
 
-:Assignee: ltran
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -24,8 +24,6 @@ from fauxfactory import gen_string
 from nailgun import entities
 from requests.exceptions import HTTPError
 
-from robottelo import manifests
-from robottelo.api.utils import upload_manifest
 from robottelo.config import settings
 from robottelo.constants import CONTAINER_REGISTRY_HUB
 from robottelo.constants import CONTAINER_UPSTREAM_NAME
@@ -370,7 +368,7 @@ def test_positive_sync_several_repos(module_org):
 
 
 @pytest.mark.tier2
-def test_positive_filter_product_list():
+def test_positive_filter_product_list(module_entitlement_manifest_org):
     """Filter products based on param 'custom/redhat_only'
 
     :id: e61fb63a-4552-4915-b13d-23ab80138249
@@ -381,12 +379,8 @@ def test_positive_filter_product_list():
 
     :BZ: 1667129
     """
-    org = entities.Organization().create()
+    org = module_entitlement_manifest_org
     product = entities.Product(organization=org).create()
-    # Manifest upload to create RH Product
-    with manifests.clone() as manifest:
-        upload_manifest(org.id, manifest.content)
-
     custom_products = entities.Product(organization=org).search(query={'custom': True})
     rh_products = entities.Product(organization=org).search(
         query={'redhat_only': True, 'per_page': 1000}
@@ -399,63 +393,3 @@ def test_positive_filter_product_list():
     assert len(rh_products) > 1
     assert 'Red Hat Beta' in (prod.name for prod in rh_products)
     assert product.name not in (prod.name for prod in rh_products)
-
-
-@pytest.mark.tier2
-def test_positive_assign_http_proxy_to_products():
-    """Assign http_proxy to Products and check whether http-proxy is
-     used during sync.
-
-    :id: c9d23aa1-3325-4abd-a1a6-d5e75c12b08a
-
-    :expectedresults: HTTP Proxy is assigned to all repos present
-        in Products and sync operation uses assigned http-proxy.
-
-    :Assignee: jpathan
-
-    :CaseImportance: Critical
-    """
-    org = entities.Organization().create()
-    # create HTTP proxies
-    http_proxy_a = entities.HTTPProxy(
-        name=gen_string('alpha', 15),
-        url=settings.http_proxy.un_auth_proxy_url,
-        organization=[org],
-    ).create()
-
-    http_proxy_b = entities.HTTPProxy(
-        name=gen_string('alpha', 15),
-        url=settings.http_proxy.auth_proxy_url,
-        username=settings.http_proxy.username,
-        password=settings.http_proxy.password,
-        organization=[org],
-    ).create()
-
-    # Create products and repositories
-    product_a = entities.Product(organization=org).create()
-    product_b = entities.Product(organization=org).create()
-    repo_a1 = entities.Repository(product=product_a, http_proxy_policy='none').create()
-    repo_a2 = entities.Repository(
-        product=product_a,
-        http_proxy_policy='use_selected_http_proxy',
-        http_proxy_id=http_proxy_a.id,
-    ).create()
-    repo_b1 = entities.Repository(product=product_b, http_proxy_policy='none').create()
-    repo_b2 = entities.Repository(
-        product=product_b, http_proxy_policy='global_default_http_proxy'
-    ).create()
-    # Add http_proxy to products
-    entities.ProductBulkAction().http_proxy(
-        data={
-            "ids": [product_a.id, product_b.id],
-            "http_proxy_policy": "use_selected_http_proxy",
-            "http_proxy_id": http_proxy_b.id,
-        }
-    )
-
-    for repo in repo_a1, repo_a2, repo_b1, repo_b2:
-        r = repo.read()
-        assert r.http_proxy_policy == "use_selected_http_proxy"
-        assert r.http_proxy_id == http_proxy_b.id
-
-    product_a.sync({'async': True})

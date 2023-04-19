@@ -8,7 +8,7 @@
 
 :CaseComponent: RHCloud-Inventory
 
-:Assignee: addubey
+:Team: Platform
 
 :TestType: Functional
 
@@ -64,6 +64,7 @@ def common_assertion(report_path):
 
 @pytest.mark.run_in_one_thread
 @pytest.mark.tier3
+@pytest.mark.e2e
 def test_rhcloud_inventory_api_e2e(
     inventory_settings, organization_ak_setup, rhcloud_registered_hosts, rhcloud_sat_host
 ):
@@ -106,7 +107,7 @@ def test_rhcloud_inventory_api_e2e(
     prefix = 'tfm-' if rhcloud_sat_host.os_version.major < 8 else ''
     package_version = rhcloud_sat_host.run(
         f'rpm -qa --qf "%{{VERSION}}" {prefix}rubygem-foreman_rh_cloud'
-    )
+    ).stdout.strip()
     assert json_meta_data['source_metadata']['foreman_rh_cloud_version'] == str(package_version)
     assert json_meta_data['source'] == 'Satellite'
     hostnames = [host['fqdn'] for host in json_data['hosts']]
@@ -133,6 +134,7 @@ def test_rhcloud_inventory_api_e2e(
         assert len(host_profiles['installed_packages']) > 1
 
 
+@pytest.mark.e2e
 @pytest.mark.tier3
 def test_rhcloud_inventory_api_hosts_synchronization(
     organization_ak_setup,

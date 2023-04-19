@@ -12,7 +12,7 @@ http://theforeman.org/api/apidoc/v2/hosts.html
 
 :CaseComponent: Hosts
 
-:Assignee: pdragun
+:Team: Endeavour
 
 :TestType: Functional
 
@@ -379,6 +379,7 @@ def test_positive_create_with_puppet_ca_proxy(
 
 
 @pytest.mark.tier2
+@pytest.mark.e2e
 def test_positive_end_to_end_with_puppet_class(
     module_puppet_org,
     module_puppet_loc,
@@ -672,6 +673,7 @@ def test_positive_create_and_update_with_content_view(
 
 
 @pytest.mark.tier1
+@pytest.mark.e2e
 def test_positive_end_to_end_with_host_parameters(module_org, module_location):
     """Create a host with a host parameters specified
     then remove and update with the newly specified parameters
@@ -707,6 +709,7 @@ def test_positive_end_to_end_with_host_parameters(module_org, module_location):
 
 
 @pytest.mark.tier2
+@pytest.mark.e2e
 @pytest.mark.on_premises_provisioning
 def test_positive_end_to_end_with_image(
     module_org, module_location, module_cr_libvirt, module_libvirt_image
@@ -1280,7 +1283,7 @@ def test_positive_verify_files_with_pxegrub_uefi_secureboot():
 
     :CaseComponent: TFTP
 
-    :Assignee: rdrazny
+    :Team: Rocket
 
     :CaseLevel: Integration
     """
@@ -1316,7 +1319,7 @@ def test_positive_verify_files_with_pxegrub2_uefi():
 
     :CaseComponent: TFTP
 
-    :Assignee: rdrazny
+    :Team: Rocket
 
     :CaseLevel: Integration
     """
@@ -1354,7 +1357,7 @@ def test_positive_verify_files_with_pxegrub2_uefi_secureboot():
 
     :CaseComponent: TFTP
 
-    :Assignee: rdrazny
+    :Team: Rocket
     """
 
 
@@ -1408,6 +1411,7 @@ class TestHostInterface:
     """Tests for Host Interfaces"""
 
     @pytest.mark.tier1
+    @pytest.mark.e2e
     def test_positive_create_end_to_end(self, module_host):
         """Create update and delete an interface with different names and minimal input
         parameters

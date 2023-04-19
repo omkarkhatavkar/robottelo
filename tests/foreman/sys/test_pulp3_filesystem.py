@@ -8,7 +8,7 @@
 
 :CaseComponent: Pulp
 
-:Assignee: ltran
+:team: Rocket
 
 :TestType: Functional
 

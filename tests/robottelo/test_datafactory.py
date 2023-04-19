@@ -56,14 +56,14 @@ class TestFilteredDataPoint:
             assert len(datafactory.invalid_usernames_list()) == 4
             assert len(datafactory.valid_labels_list()) == 2
             assert len(datafactory.valid_data_list()) == 7
-            assert len(datafactory.valid_emails_list()) == 8
+            assert len(datafactory.valid_emails_list()) == 10
             assert len(datafactory.valid_environments_list()) == 4
             assert len(datafactory.valid_hosts_list()) == 3
             assert len(datafactory.valid_hostgroups_list()) == 7
             assert len(datafactory.valid_interfaces_list()) == 3
             assert len(datafactory.valid_names_list()) == 15
             assert len(datafactory.valid_org_names_list()) == 7
-            assert len(datafactory.valid_usernames_list()) == 6
+            assert len(datafactory.valid_usernames_list()) == 5
             assert len(datafactory.valid_cron_expressions()) == 4
             assert len(datafactory.valid_docker_repository_names()) == 7
 

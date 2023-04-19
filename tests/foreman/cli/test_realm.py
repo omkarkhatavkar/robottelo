@@ -6,9 +6,9 @@
 
 :CaseLevel: Acceptance
 
-:CaseComponent: Realm
+:CaseComponent: Authentication
 
-:Assignee: pondrejk
+:Team: Endeavour
 
 :TestType: Functional
 
