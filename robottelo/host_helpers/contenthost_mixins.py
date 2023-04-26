@@ -4,7 +4,6 @@ from functools import cached_property
 from tempfile import NamedTemporaryFile
 
 from robottelo import constants
-from robottelo.api import utils
 from robottelo.config import robottelo_tmp_dir
 from robottelo.config import settings
 from robottelo.logging import logger
@@ -28,13 +27,23 @@ class VersionedContent:
 
     @cached_property
     def REPOS(self):
-        return {
-            'rhel': constants.REPOS[f'rhel{self._v_major}'],
-            'rhscl': constants.REPOS[f'rhscl{self._v_major}'],
-            'rhst': constants.REPOS[f'rhst{self._v_major}'],
-            'rhsc': constants.REPOS[f'rhsc{self._v_major}'],
-            'rhsc_iso': constants.REPOS[f'rhsc{self._v_major}_iso'],
-        }
+        try:
+            if self._v_major > 7:
+                sys_repos = {
+                    'rhel_bos': constants.REPOS[f'rhel{self._v_major}_bos'],
+                    'rhel_aps': constants.REPOS[f'rhel{self._v_major}_aps'],
+                }
+            else:
+                sys_repos = {'rhel': constants.REPOS[f'rhel{self._v_major}']}
+            repos = {
+                'rhscl': constants.REPOS[f'rhscl{self._v_major}'],
+                'rhsclient': constants.REPOS[f'rhsclient{self._v_major}'],
+                'rhsc': constants.REPOS[f'rhsc{self._v_major}'],
+                'rhsc_iso': constants.REPOS[f'rhsc{self._v_major}_iso'],
+            }
+            return sys_repos | repos
+        except KeyError as err:
+            raise ValueError(f'Unsupported system version: {self._v_major}') from err
 
     @cached_property
     def OSCAP(self):
@@ -52,7 +61,7 @@ class VersionedContent:
         if not product:
             if self.__class__.__name__ == 'ContentHost':
                 product = 'client'
-                release = release or 'Client'
+                release = release or 'client'
             else:
                 product = self.__class__.__name__.lower()
         repo = repo or product  # if repo is not specified, set it to the same as the product is
@@ -62,7 +71,7 @@ class VersionedContent:
             settings_release.append('0')
         settings_release = '.'.join(settings_release[:3])  # keep only major.minor.patch
         if product != 'client' and release != settings_release:
-            logger.warn(
+            logger.warning(
                 'Satellite release in settings differs from the one passed to the function '
                 'or the version of the Satellite object. '
                 f'settings: {settings_release}, parameter: {release}'
@@ -73,18 +82,16 @@ class VersionedContent:
     def download_repofile(self, product=None, release=None, snap=''):
         """Downloads the tools/client, capsule, or satellite repos on the machine"""
         product, release, snap, v_major, _ = self._dogfood_helper(product, release, snap)
-        url = dogfood_repofile_url(settings.repos.ohsnap_repo_host, product, release, v_major, snap)
+        url = dogfood_repofile_url(settings.ohsnap, product, release, v_major, snap)
         self.execute(f'curl -o /etc/yum.repos.d/dogfood.repo {url}')
 
     def dogfood_repository(self, repo=None, product=None, release=None, snap=''):
         """Returns a repository definition based on the arguments provided"""
         product, release, snap, v_major, repo = self._dogfood_helper(product, release, snap, repo)
-        return dogfood_repository(
-            settings.repos.ohsnap_repo_host, repo, product, release, v_major, snap, self.arch
-        )
+        return dogfood_repository(settings.ohsnap, repo, product, release, v_major, snap, self.arch)
 
     def enable_tools_repo(self, organization_id):
-        return utils.enable_rhrepo_and_fetchid(
+        return self.satellite.api_factory.enable_rhrepo_and_fetchid(
             basearch=constants.DEFAULT_ARCHITECTURE,
             org_id=organization_id,
             product=constants.PRDS['rhel'],
@@ -94,7 +101,7 @@ class VersionedContent:
         )
 
     def enable_rhel_repo(self, organization_id):
-        return utils.enable_rhrepo_and_fetchid(
+        return self.satellite.api_factory.enable_rhrepo_and_fetchid(
             basearch=constants.DEFAULT_ARCHITECTURE,
             org_id=organization_id,
             product=constants.PRDS['rhel'],
@@ -129,6 +136,15 @@ class VersionedContent:
             self.execute(f'wget {rpm_url} -P {file_path}')
             # Renaming custom rpm to preRepoSync.rpm
             self.execute(f'createrepo --database {file_path}')
+
+
+class HostInfo:
+    """Helpers mixin that enables getting information about a host"""
+
+    @property
+    def applicable_errata_count(self):
+        """return the applicable errata count for a host"""
+        return self.nailgun_host.read().content_facet_attributes['errata_counts']['total']
 
 
 class SystemFacts:

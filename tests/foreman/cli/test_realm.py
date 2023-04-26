@@ -6,9 +6,9 @@
 
 :CaseLevel: Acceptance
 
-:CaseComponent: Realm
+:CaseComponent: Authentication
 
-:Team: Rocket
+:Team: Endeavour
 
 :TestType: Functional
 

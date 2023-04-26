@@ -21,6 +21,7 @@ def post(settings):
                 'Config will be fetched now.'
             )
             data = get_repos_config(settings)
+            write_cache(settings_cache_path, data)
     data['dynaconf_merge'] = True
     return data
 
@@ -38,7 +39,7 @@ def read_cache(path):
 def get_repos_config(settings):
     data = {}
     # check if the Ohsnap URL is valid, our sample configuration does not contain a valid URL
-    if is_url(settings.repos.ohsnap_repo_host):
+    if is_url(settings.ohsnap.host):
         data.update(get_ohsnap_repos(settings))
     else:
         logger.error(
@@ -119,7 +120,7 @@ def get_dogfood_satclient_repos(settings):
             settings,
             repo='client',
             product='client',
-            release='Client',
+            release='client',
             os_release=ver,
         )
     return data
@@ -127,7 +128,7 @@ def get_dogfood_satclient_repos(settings):
 
 def get_ohsnap_repo_url(settings, repo, product=None, release=None, os_release=None, snap=''):
     repourl = dogfood_repository(
-        settings.repos.ohsnap_repo_host,
+        settings.ohsnap,
         repo=repo,
         product=product,
         release=release,

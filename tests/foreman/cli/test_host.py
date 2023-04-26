@@ -26,6 +26,7 @@ from fauxfactory import gen_integer
 from fauxfactory import gen_ipaddr
 from fauxfactory import gen_mac
 from fauxfactory import gen_string
+from wait_for import TimedOutError
 from wait_for import wait_for
 
 from robottelo.cli.activationkey import ActivationKey
@@ -301,6 +302,7 @@ def test_positive_search_all_field_sets():
 
 
 # -------------------------- CREATE SCENARIOS -------------------------
+@pytest.mark.e2e
 @pytest.mark.cli_host_create
 @pytest.mark.tier1
 @pytest.mark.upgrade
@@ -355,6 +357,7 @@ def test_positive_create_and_delete(target_sat, module_lce_library, module_publi
         Host.info({'id': new_host['id']})
 
 
+@pytest.mark.e2e
 @pytest.mark.cli_host_create
 @pytest.mark.tier1
 def test_positive_crud_interface_by_id(target_sat, default_location, default_org):
@@ -943,6 +946,7 @@ def test_negative_create_with_incompatible_pxe_loader():
 
 
 # -------------------------- UPDATE SCENARIOS -------------------------
+@pytest.mark.e2e
 @pytest.mark.cli_host_update
 @pytest.mark.tier1
 def test_positive_update_parameters_by_name(
@@ -1570,8 +1574,18 @@ def test_positive_provision_baremetal_with_uefi_secureboot():
 
 
 @pytest.fixture(scope="function")
-def setup_custom_repo(target_sat, module_org, katello_host_tools_host):
+def setup_custom_repo(target_sat, module_org, katello_host_tools_host, request):
     """Create custom repository content"""
+
+    def restore_sca_setting():
+        """Restore the original SCA setting for module_org"""
+        module_org.sca_enable() if sca_enabled else module_org.sca_disable()
+
+    if module_org.sca_eligible().get('simple_content_access_eligible', False):
+        sca_enabled = module_org.simple_content_access
+        module_org.sca_disable()
+        request.addfinalizer(restore_sca_setting)
+
     # get package details
     details = {}
     if katello_host_tools_host.os_version.major == 6:
@@ -1629,6 +1643,7 @@ def yum_security_plugin(katello_host_tools_host):
         assert yum_plugin_install.status == 0, "Failed to install yum-plugin-security plugin"
 
 
+@pytest.mark.e2e
 @pytest.mark.cli_katello_host_tools
 @pytest.mark.tier3
 def test_positive_report_package_installed_removed(katello_host_tools_host, setup_custom_repo):
@@ -1736,6 +1751,7 @@ def test_positive_package_applicability(katello_host_tools_host, setup_custom_re
     assert len(applicable_packages) == 0
 
 
+@pytest.mark.e2e
 @pytest.mark.cli_katello_host_tools
 @pytest.mark.pit_client
 @pytest.mark.pit_server
@@ -1773,7 +1789,7 @@ def test_positive_erratum_applicability(
     applicable_errata, _ = wait_for(
         lambda: Host.errata_list({'host-id': host_info['id']}),
         handle_exception=True,
-        failure_condition=[],
+        fail_condition=[],
         timeout=120,
         delay=5,
     )
@@ -1787,11 +1803,24 @@ def test_positive_erratum_applicability(
     result = client.run(f'yum update -y --advisory {setup_custom_repo["security_errata"]}')
     assert result.status == 0
     client.subscription_manager_list_repos()
-    applicable_erratum = Host.errata_list({'host-id': host_info['id']})
-    applicable_erratum_ids = [
-        errata['erratum-id'] for errata in applicable_erratum if errata['installable'] == 'true'
-    ]
-    assert setup_custom_repo["security_errata"] not in applicable_erratum_ids
+    # verify that the applied erratum is not present in the list of installable errata
+    try:
+        applicable_erratum, _ = wait_for(
+            lambda: setup_custom_repo["security_errata"]
+            not in [
+                errata['erratum-id']
+                for errata in Host.errata_list({'host-id': host_info['id']})
+                if errata['installable'] == 'true'
+            ],
+            handle_exception=True,
+            timeout=300,
+            delay=5,
+        )
+    except TimedOutError:
+        raise TimedOutError(
+            f"Timed out waiting for erratum \"{setup_custom_repo['security_errata']}\""
+            " to disappear from the list"
+        )
 
 
 @pytest.mark.cli_katello_host_tools
@@ -2144,6 +2173,7 @@ def test_negative_without_attach_with_lce(
     host_subscription_client.enable_repo(REPOS['rhst7']['id'])
 
 
+@pytest.mark.e2e
 @pytest.mark.cli_host_subscription
 @pytest.mark.tier3
 @pytest.mark.upgrade
@@ -2461,6 +2491,8 @@ def test_positive_tracer_list_and_resolve(tracer_host):
     :parametrized: yes
 
     :CaseImportance: Medium
+
+    :CaseComponent: Katello-tracer
     """
     client = tracer_host
     package = settings.repos["MOCK_SERVICE_RPM"]

@@ -500,6 +500,7 @@ def test_insights_tab_on_host_details_page(
                 assert len(insights_recommendations) == int(result['Recommendations'])
 
 
+@pytest.mark.e2e
 @pytest.mark.no_containers
 def test_insights_registration_with_capsule(
     rhcloud_capsule, organization_ak_setup, rhcloud_sat_host, rhel7_contenthost, default_os
@@ -536,7 +537,7 @@ def test_insights_registration_with_capsule(
                 'general.operating_system': default_os.title,
                 'general.orgnization': org.name,
                 'general.capsule': rhcloud_capsule.hostname,
-                'advanced.activation_keys': ak.name,
+                'general.activation_keys': ak.name,
                 'general.insecure': True,
                 'advanced.setup_insights': 'Yes (override)',
                 'advanced.setup_rex': 'Yes (override)',

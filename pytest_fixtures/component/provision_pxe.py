@@ -10,8 +10,6 @@ from fauxfactory import gen_string
 from packaging.version import Version
 
 from robottelo import constants
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import wait_for_tasks
 from robottelo.config import settings
 from robottelo.hosts import ContentHost
 
@@ -45,9 +43,25 @@ def module_provisioning_rhel_content(
         repo_names.append(f'rhel{rhel_ver}_aps')
     rh_repos = []
     tasks = []
+    rh_repo_id = ""
     content_view = sat.api.ContentView(organization=module_sca_manifest_org).create()
+
+    # Custom Content for Client repo
+    custom_product = sat.api.Product(
+        organization=module_sca_manifest_org, name=f'rhel{rhel_ver}_{gen_string("alpha")}'
+    ).create()
+    client_repo = sat.api.Repository(
+        organization=module_sca_manifest_org,
+        product=custom_product,
+        content_type='yum',
+        url=settings.repos.SATCLIENT_REPO[f'rhel{rhel_ver}'],
+    ).create()
+    task = client_repo.sync(synchronous=False)
+    tasks.append(task)
+    content_view.repository = [client_repo]
+
     for name in repo_names:
-        rh_kickstart_repo_id = enable_rhrepo_and_fetchid(
+        rh_kickstart_repo_id = sat.api_factory.enable_rhrepo_and_fetchid(
             basearch=constants.DEFAULT_ARCHITECTURE,
             org_id=module_sca_manifest_org.id,
             product=constants.REPOS['kickstart'][name]['product'],
@@ -55,26 +69,28 @@ def module_provisioning_rhel_content(
             reposet=constants.REPOS['kickstart'][name]['reposet'],
             releasever=constants.REPOS['kickstart'][name]['version'],
         )
-
-        rh_repo_id = enable_rhrepo_and_fetchid(
-            basearch=constants.DEFAULT_ARCHITECTURE,
-            org_id=module_sca_manifest_org.id,
-            product=constants.REPOS[name]['product'],
-            repo=constants.REPOS[name]['name'],
-            reposet=constants.REPOS[name]['reposet'],
-            releasever=constants.REPOS[name]['releasever'],
-        )
+        # do not sync content repos for discovery based provisioning.
+        if not module_provisioning_sat.provisioning_type == 'discovery':
+            rh_repo_id = sat.api_factory.enable_rhrepo_and_fetchid(
+                basearch=constants.DEFAULT_ARCHITECTURE,
+                org_id=module_sca_manifest_org.id,
+                product=constants.REPOS[name]['product'],
+                repo=constants.REPOS[name]['name'],
+                reposet=constants.REPOS[name]['reposet'],
+                releasever=constants.REPOS[name]['releasever'],
+            )
 
         # Sync step because repo is not synced by default
         for repo_id in [rh_kickstart_repo_id, rh_repo_id]:
-            rh_repo = sat.api.Repository(id=repo_id).read()
-            task = rh_repo.sync(synchronous=False)
-            tasks.append(task)
-            rh_repos.append(rh_repo)
-            content_view.repository.append(rh_repo)
-            content_view.update(['repository'])
+            if repo_id:
+                rh_repo = sat.api.Repository(id=repo_id).read()
+                task = rh_repo.sync(synchronous=False)
+                tasks.append(task)
+                rh_repos.append(rh_repo)
+                content_view.repository.append(rh_repo)
+                content_view.update(['repository'])
     for task in tasks:
-        wait_for_tasks(
+        sat.wait_for_tasks(
             search_query=(f'id = {task["id"]}'),
             poll_timeout=2500,
         )
@@ -93,7 +109,7 @@ def module_provisioning_rhel_content(
     # return only the first kickstart repo - RHEL X KS or RHEL X BaseOS KS
     ksrepo = rh_repos[0]
     publish = content_view.publish()
-    task_status = wait_for_tasks(
+    task_status = sat.wait_for_tasks(
         search_query=(f'Actions::Katello::ContentView::Publish and id = {publish["id"]}'),
         search_rate=15,
         max_tries=10,
@@ -113,6 +129,7 @@ def module_provisioning_rhel_content(
 
 @pytest.fixture(scope='module')
 def module_provisioning_sat(
+    request,
     module_target_sat,
     module_sca_manifest_org,
     module_location,
@@ -124,6 +141,7 @@ def module_provisioning_sat(
     It uses the artifacts from the workflow to create all the necessary Satellite entities
     that are later used by the tests.
     """
+    provisioning_type = getattr(request, 'param', '')
     sat = module_target_sat
     provisioning_domain_name = f"{gen_string('alpha').lower()}.foo"
 
@@ -179,7 +197,7 @@ def module_provisioning_sat(
         domain=[domain.id],
     ).create()
 
-    return Box(sat=sat, domain=domain, subnet=subnet)
+    return Box(sat=sat, domain=domain, subnet=subnet, provisioning_type=provisioning_type)
 
 
 @pytest.fixture(scope='module')

@@ -8,7 +8,7 @@
 
 :CaseComponent: ErrataManagement
 
-:Team: Phoenix
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -23,8 +23,6 @@ import pytest
 from nailgun import entities
 
 from robottelo import constants
-from robottelo.api.utils import enable_rhrepo_and_fetchid
-from robottelo.api.utils import wait_for_tasks
 from robottelo.cli.factory import setup_org_for_a_custom_repo
 from robottelo.cli.factory import setup_org_for_a_rh_repo
 from robottelo.cli.host import Host
@@ -203,7 +201,7 @@ def test_positive_install_in_hc(module_org, activation_key, custom_repo, target_
             'organization_id': module_org.id,
         },
     )['id']
-    wait_for_tasks(
+    target_sat.wait_for_tasks(
         search_query=(f'label = Actions::RemoteExecution::RunHostsJob and id = {task_id}'),
         search_rate=15,
         max_tries=10,
@@ -255,7 +253,7 @@ def test_positive_install_in_host(
             'organization_id': module_org.id,
         },
     )['id']
-    wait_for_tasks(
+    target_sat.wait_for_tasks(
         search_query=(f'label = Actions::RemoteExecution::RunHostsJob and id = {task_id}'),
         search_rate=15,
         max_tries=10,
@@ -297,8 +295,7 @@ def test_positive_install_multiple_in_host(
         _install_package(
             module_org, clients=[rhel_contenthost], host_ids=[host.id], package_name=package
         )
-    host = host.read()
-    applicable_errata_count = host.content_facet_attributes['errata_counts']['total']
+    applicable_errata_count = rhel_contenthost.applicable_errata_count
     assert applicable_errata_count > 1
     rhel_contenthost.add_rex_key(satellite=target_sat)
     for errata in settings.repos.yum_9.errata[1:4]:
@@ -311,14 +308,13 @@ def test_positive_install_multiple_in_host(
                 'organization_id': module_org.id,
             },
         )['id']
-        wait_for_tasks(
+        target_sat.wait_for_tasks(
             search_query=(f'label = Actions::RemoteExecution::RunHostsJob and id = {task_id}'),
             search_rate=20,
             max_tries=15,
         )
-        host = host.read()
         applicable_errata_count -= 1
-        assert host.content_facet_attributes['errata_counts']['total'] == applicable_errata_count
+        assert rhel_contenthost.applicable_errata_count == applicable_errata_count
 
 
 @pytest.mark.tier3
@@ -413,7 +409,7 @@ def test_positive_sorted_issue_date_and_filter_by_cve(module_org, custom_repo, t
 
 
 @pytest.fixture(scope='module')
-def setup_content_rhel6(module_entitlement_manifest_org):
+def setup_content_rhel6(module_entitlement_manifest_org, module_target_sat):
     """Setup content fot rhel6 content host
     Using `Red Hat Enterprise Virtualization Agents for RHEL 6 Server (RPMs)`
     from manifest, SATTOOLS_REPO for host-tools and yum_9 repo as custom repo.
@@ -421,7 +417,7 @@ def setup_content_rhel6(module_entitlement_manifest_org):
     :return: Activation Key, Organization, subscription list
     """
     org = module_entitlement_manifest_org
-    rh_repo_id_rhva = enable_rhrepo_and_fetchid(
+    rh_repo_id_rhva = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch='x86_64',
         org_id=org.id,
         product=constants.PRDS['rhel'],
@@ -788,9 +784,7 @@ def test_errata_installation_with_swidtags(
         return_result=True,
     )
     assert before_errata_apply_result != ''
-    host = rhel8_contenthost.nailgun_host
-    host = host.read()
-    applicable_errata_count = host.content_facet_attributes['errata_counts']['total']
+    applicable_errata_count = rhel8_contenthost.applicable_errata_count
     assert applicable_errata_count == 1
 
     # apply modular errata
@@ -799,9 +793,8 @@ def test_errata_installation_with_swidtags(
     )
     _run_remote_command_on_content_host(module_org, 'dnf -y upload-profile', rhel8_contenthost)
     Host.errata_recalculate({'host-id': rhel8_contenthost.nailgun_host.id})
-    host = host.read()
     applicable_errata_count -= 1
-    assert host.content_facet_attributes['errata_counts']['total'] == applicable_errata_count
+    assert rhel8_contenthost.applicable_errata_count == applicable_errata_count
     after_errata_apply_result = _run_remote_command_on_content_host(
         module_org,
         f"swidq -i -n {module_name} | grep 'File'| grep -o 'rpm-.*.swidtag'",
@@ -819,10 +812,10 @@ def test_errata_installation_with_swidtags(
 
 
 @pytest.fixture(scope='module')
-def rh_repo_module_manifest(module_entitlement_manifest_org):
+def rh_repo_module_manifest(module_entitlement_manifest_org, module_target_sat):
     """Use module manifest org, creates tools repo, syncs and returns RH repo."""
     # enable rhel repo and return its ID
-    rh_repo_id = enable_rhrepo_and_fetchid(
+    rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch=constants.DEFAULT_ARCHITECTURE,
         org_id=module_entitlement_manifest_org.id,
         product=constants.PRDS['rhel8'],
@@ -949,3 +942,26 @@ def test_apply_modular_errata_using_default_content_view(
     # Check that there is now no errata applicable
     errata = _fetch_available_errata(module_entitlement_manifest_org, host, 0)
     assert len(errata) == 0
+
+    @pytest.mark.tier2
+    @pytest.mark.skip("Uses old large_errata repo from repos.fedorapeople")
+    def test_positive_sync_repos_with_large_errata(target_sat):
+        """Attempt to synchronize 2 repositories containing large (or lots of)
+        errata.
+
+        :id: d6680b9f-4c88-40b4-8b96-3d170664cb28
+
+        :customerscenario: true
+
+        :BZ: 1463811
+
+        :CaseLevel: Integration
+
+        :expectedresults: both repositories were successfully synchronized
+        """
+        org = target_sat.api.Organization().create()
+        for _ in range(2):
+            product = target_sat.api.Product(organization=org).create()
+            repo = target_sat.api.Repository(product=product, url=settings.repos.yum_7.url).create()
+            response = repo.sync()
+            assert response, f"Repository {repo} failed to sync."

@@ -3,46 +3,19 @@ import pytest
 
 from robottelo.config import settings
 from robottelo.constants import ENVIRONMENT
-from robottelo.utils.installer import InstallerCommand
-
-
-common_opts = {
-    'foreman-proxy-puppetca': 'true',
-    'foreman-proxy-content-puppet': 'true',
-    'foreman-proxy-puppet': 'true',
-    'puppet-server': 'true',
-    'puppet-server-foreman-ssl-ca': '/etc/pki/katello/puppet/puppet_client_ca.crt',
-    'puppet-server-foreman-ssl-cert': '/etc/pki/katello/puppet/puppet_client.crt',
-    'puppet-server-foreman-ssl-key': '/etc/pki/katello/puppet/puppet_client.key',
-    # Options for puppetbootstrap test
-    'foreman-proxy-templates': 'true',
-    'foreman-proxy-http': 'true',
-}
-
-enable_satellite_cmd = InstallerCommand(
-    installer_args=[
-        'enable-foreman-plugin-puppet',
-        'enable-foreman-cli-puppet',
-        'enable-puppet',
-    ],
-    installer_opts=common_opts,
-)
-
-enable_capsule_cmd = InstallerCommand(
-    installer_args=[
-        'enable-puppet',
-    ],
-    installer_opts=common_opts,
-)
 
 
 @pytest.fixture(scope='session')
 def session_puppet_enabled_sat(session_satellite_host):
     """Satellite with enabled puppet plugin"""
-    result = session_satellite_host.execute(enable_satellite_cmd.get_command(), timeout='20m')
-    assert result.status == 0
-    session_satellite_host.execute('hammer -r')  # workaround for BZ#2039696
-    yield session_satellite_host
+    yield session_satellite_host.enable_puppet_satellite()
+
+
+@pytest.fixture(scope='session')
+def session_puppet_enabled_capsule(session_capsule_host, session_puppet_enabled_sat):
+    """Capsule with enabled puppet plugin"""
+    session_capsule_host.capsule_setup(sat_host=session_puppet_enabled_sat)
+    yield session_capsule_host.enable_puppet_capsule(satellite=session_puppet_enabled_sat)
 
 
 @pytest.fixture(scope='module')

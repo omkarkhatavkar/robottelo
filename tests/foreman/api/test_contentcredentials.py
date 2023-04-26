@@ -8,7 +8,7 @@
 
 :CaseComponent: ContentCredentials
 
-:Team: Phoenix
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -16,6 +16,8 @@
 
 :Upstream: No
 """
+from copy import copy
+
 import pytest
 from fauxfactory import gen_string
 from nailgun import entities
@@ -227,3 +229,49 @@ def test_positive_delete(module_org):
     gpg_key.delete()
     with pytest.raises(HTTPError):
         gpg_key.read()
+
+
+@pytest.mark.tier3
+def test_positive_block_delete_key_in_use(module_org, target_sat):
+    """Create a GPG key with valid content. Create a new product and
+        associated repository, assigning the GPG key to both. Attempt to delete the
+        GPG key in use.
+
+    :id: b79fd3ff-8cdb-4cdd-94e5-76de742ec967
+
+    :expectedresults: Blocked deletion of gpg key in use, it remains
+        unmodified, is still associated with product and repo.
+
+    :BZ: 2052904
+
+    :customerscenario: true
+
+    :CaseImportance: Critical
+    """
+    gpg_key = target_sat.api.GPGKey(organization=module_org, content=key_content).create()
+    gpg_copy = copy(gpg_key)
+    # Create new product with gpg, and a single associated repository
+    product = target_sat.api.Product(gpg_key=gpg_key, organization=module_org).create()
+    repo = target_sat.api.Repository(product=product).create()
+    product.sync()
+
+    # Assert the same gpg key is associated with new product and repo
+    assert product.gpg_key.id == gpg_key.id
+    assert repo.gpg_key.id == gpg_key.id
+    assert product.gpg_key.id == repo.gpg_key.id
+
+    # Attempt to delete gpg in use, capturing api response without raising exception
+    response = gpg_key.delete_raw()
+    assert response.status_code == 500
+    assert 'Cannot delete record because of dependent root_repositories' in str(
+        response.json().get('errors')
+    )
+
+    # Assert gpg matches unmodified copy
+    assert gpg_key.id == gpg_copy.id
+    assert gpg_key.organization == gpg_copy.organization
+    assert gpg_key.content == gpg_copy.content
+    # Assert gpg remains associated with product and repo
+    assert product.gpg_key.id == repo.gpg_key.id
+    assert product.gpg_key.id == gpg_key.id
+    assert repo.gpg_key.id == gpg_key.id

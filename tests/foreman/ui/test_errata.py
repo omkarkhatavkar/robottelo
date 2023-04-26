@@ -8,7 +8,7 @@
 
 :CaseComponent: ErrataManagement
 
-:Team: Phoenix
+:team: Phoenix-content
 
 :TestType: Functional
 
@@ -143,6 +143,7 @@ def vm(module_repos_collection_with_setup, rhel7_contenthost, target_sat):
     yield rhel7_contenthost
 
 
+@pytest.mark.e2e
 @pytest.mark.tier3
 @pytest.mark.parametrize('setting_update', ['remote_execution_by_default'], indirect=True)
 @pytest.mark.parametrize(
@@ -234,7 +235,7 @@ def test_end_to_end(
         assert status['overview']['job_status_progress'] == '100%'
         _generate_errata_applicability(vm.hostname)
         vm = vm.nailgun_host.read()
-        assert vm.content_facet_attributes['errata_counts']['total'] == 0
+        assert vm.applicable_errata_count == 0
 
 
 @pytest.mark.tier2

@@ -3,7 +3,6 @@ import socket
 
 import pytest
 from box import Box
-from broker import Broker
 from nailgun import entities
 
 from robottelo.cli.base import CLIReturnCodeError
@@ -20,6 +19,8 @@ from robottelo.hosts import SSOHost
 from robottelo.utils.datafactory import gen_string
 from robottelo.utils.installer import InstallerCommand
 from robottelo.utils.issue_handlers import is_open
+
+LOGGEDOUT = 'Logged out.'
 
 
 @pytest.fixture(scope='module')
@@ -44,7 +45,7 @@ def ldap_cleanup():
 def ad_data():
     supported_server_versions = ['2016', '2019']
 
-    def _ad_data(version='2016'):
+    def _ad_data(version='2019'):
         if version in supported_server_versions:
             ad_server_details = {
                 'ldap_user_name': settings.ldap.username,
@@ -177,11 +178,11 @@ def ldap_auth_source(
 ):
     auth_type = request.param.lower()
     if 'ad' in auth_type:
-        ad_data = ad_data('2019') if '2019' in auth_type else ad_data()
+        ad_data = ad_data()
         # entity create with AD settings
         auth_source = module_target_sat.api.AuthSourceLDAP(
             onthefly_register=True,
-            account=ad_data['ldap_user_name'],
+            account=f"cn={ad_data['ldap_user_name']},{ad_data['base_dn']}",
             account_password=ad_data['ldap_user_passwd'],
             base_dn=ad_data['base_dn'],
             groups_base=ad_data['group_base_dn'],
@@ -259,7 +260,7 @@ def ldap_auth_source(
 def auth_data(request, ad_data, ipa_data):
     auth_type = request.param.lower()
     if 'ad' in auth_type:
-        ad_data = ad_data('2019') if '2019' in auth_type else ad_data()
+        ad_data = ad_data()
         ad_data['server_type'] = LDAP_SERVER_TYPE['UI']['ad']
         ad_data['attr_login'] = LDAP_ATTR['login_ad']
         ad_data['auth_type'] = auth_type
@@ -443,8 +444,7 @@ def rhsso_setting_setup_with_timeout(module_target_sat, rhsso_setting_setup):
 
 def enroll_ad_and_configure_external_auth(request, ad_data, sat):
     """Enroll Satellite Server to an AD Server."""
-    auth_type = getattr(request, 'param', 'AD_2016')
-    ad_data = ad_data('2019') if '2019' in auth_type else ad_data()
+    ad_data = ad_data()
     packages = (
         'sssd adcli realmd ipa-python-compat krb5-workstation '
         'samba-common-tools gssproxy nfs-utils ipa-client'
@@ -459,25 +459,33 @@ def enroll_ad_and_configure_external_auth(request, ad_data, sat):
     )
 
     # install the required packages
-    sat.execute(f'yum -y --disableplugin=foreman-protector install {packages}')
+    assert sat.execute(f'yum -y --disableplugin=foreman-protector install {packages}').status == 0
 
     # update the AD name server
-    sat.execute('chattr -i /etc/resolv.conf')
+    assert sat.execute('chattr -i /etc/resolv.conf').status == 0
     line_number = int(
         sat.execute(
             "awk -v search='nameserver' '$0~search{print NR; exit}' /etc/resolv.conf"
         ).stdout
     )
-    sat.execute(f'sed -i "{line_number}i nameserver {ad_data.nameserver}" /etc/resolv.conf')
-    sat.execute('chattr +i /etc/resolv.conf')
+    assert (
+        sat.execute(
+            f'sed -i "{line_number}i nameserver {ad_data.nameserver}" /etc/resolv.conf'
+        ).status
+        == 0
+    )
+    assert sat.execute('chattr +i /etc/resolv.conf').status == 0
 
     # join the realm
-    sat.execute(
-        f'echo {settings.ldap.password} | realm join -v {realm} --membership-software=samba'
+    assert (
+        sat.execute(
+            f'echo {settings.ldap.password} | realm join -v {realm} --membership-software=samba'
+        ).status
+        == 0
     )
-    sat.execute('touch /etc/ipa/default.conf')
-    sat.execute(f'echo "{default_content}" > /etc/ipa/default.conf')
-    sat.execute(f'echo "{keytab_content}" > /etc/net-keytab.conf')
+    assert sat.execute('touch /etc/ipa/default.conf').status == 0
+    assert sat.execute(f'echo "{default_content}" > /etc/ipa/default.conf').status == 0
+    assert sat.execute(f'echo "{keytab_content}" > /etc/net-keytab.conf').status == 0
 
     # gather the apache id
     id_apache = str(sat.execute('id -u apache')).strip()
@@ -488,14 +496,14 @@ def enroll_ad_and_configure_external_auth(request, ad_data, sat):
     )
 
     # register the satellite as client for external auth
-    sat.execute(f'echo "{http_conf_content}" > /etc/gssproxy/00-http.conf')
+    assert sat.execute(f'echo "{http_conf_content}" > /etc/gssproxy/00-http.conf').status == 0
     token_command = (
         'KRB5_KTNAME=FILE:/etc/httpd/conf/http.keytab net ads keytab add HTTP '
         '-U administrator -d3 -s /etc/net-keytab.conf'
     )
-    sat.execute(f'echo {settings.ldap.password} | {token_command}')
-    sat.execute('chown root.apache /etc/httpd/conf/http.keytab')
-    sat.execute('chmod 640 /etc/httpd/conf/http.keytab')
+    assert sat.execute(f'echo {settings.ldap.password} | {token_command}').status == 0
+    assert sat.execute('chown root.apache /etc/httpd/conf/http.keytab').status == 0
+    assert sat.execute('chmod 640 /etc/httpd/conf/http.keytab').status == 0
 
     # enable the foreman-ipa-authentication feature
     result = sat.install(InstallerCommand('foreman-ipa-authentication true'))
@@ -507,23 +515,34 @@ def enroll_ad_and_configure_external_auth(request, ad_data, sat):
             "awk -v search='domain/' '$0~search{print NR; exit}' /etc/sssd/sssd.conf"
         ).stdout
     )
-    sat.execute(f'sed -i "{line_number + 1}i ad_gpo_map_service = +foreman" /etc/sssd/sssd.conf')
-    sat.execute('systemctl restart sssd.service')
+    assert (
+        sat.execute(
+            f'sed -i "{line_number + 1}i ad_gpo_map_service = +foreman" /etc/sssd/sssd.conf'
+        ).status
+        == 0
+    )
+    assert sat.execute('systemctl restart sssd.service').status == 0
 
     # unset GssapiLocalName (BZ#1787630)
-    sat.execute(
-        'sed -i -e "s/GssapiLocalName.*On/GssapiLocalName Off/g" '
-        '/etc/httpd/conf.d/05-foreman-ssl.d/auth_gssapi.conf'
+    assert (
+        sat.execute(
+            'sed -i -e "s/GssapiLocalName.*On/GssapiLocalName Off/g" '
+            '/etc/httpd/conf.d/05-foreman-ssl.d/auth_gssapi.conf'
+        ).status
+        == 0
     )
-    sat.execute('systemctl restart gssproxy.service')
-    sat.execute('systemctl enable gssproxy.service')
+    assert sat.execute('systemctl restart gssproxy.service').status == 0
+    assert sat.execute('systemctl enable gssproxy.service').status == 0
 
     # restart the deamon and httpd services
     httpd_service_content = (
         '.include /lib/systemd/system/httpd.service\n[Service]' '\nEnvironment=GSS_USE_PROXY=1'
     )
-    sat.execute(f'echo "{httpd_service_content}" > /etc/systemd/system/httpd.service')
-    sat.execute('systemctl daemon-reload && systemctl restart httpd.service')
+    assert (
+        sat.execute(f'echo "{httpd_service_content}" > /etc/systemd/system/httpd.service').status
+        == 0
+    )
+    assert sat.execute('systemctl daemon-reload && systemctl restart httpd.service').status == 0
 
 
 @pytest.mark.external_auth
@@ -540,13 +559,49 @@ def func_enroll_ad_and_configure_external_auth(request, ad_data, target_sat):
 
 @pytest.mark.external_auth
 @pytest.fixture
-def configure_hammer_negotiate(parametrized_enrolled_sat):
-    """Configures hammer to use sessions and negotitate auth."""
-    parametrized_enrolled_sat.execute(f'mv {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
-    cfg = ':foreman:\n  :default_auth_type: Negotiate_Auth\n  :use_sessions: true\n'
-    parametrized_enrolled_sat.execute(f"echo '{cfg}' > {HAMMER_CONFIG}")
+def configure_hammer_no_creds(parametrized_enrolled_sat):
+    """Configures hammer to use sessions and negotiate auth."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:username.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"sed -i '/:password.*/d' {HAMMER_CONFIG}")
     yield
     parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture
+def configure_hammer_negotiate(parametrized_enrolled_sat, configure_hammer_no_creds):
+    """Configures hammer to use sessions and negotiate auth."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:default_auth_type.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"sed -i '/:use_sessions.*/d' {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(f"echo '  :use_sessions: true' >> {HAMMER_CONFIG}")
+    parametrized_enrolled_sat.execute(
+        f"echo '  :default_auth_type: Negotiate_Auth' >> {HAMMER_CONFIG}"
+    )
+    yield
+    parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture
+def configure_hammer_no_negotiate(parametrized_enrolled_sat):
+    """Configures hammer not to use automatic negotiation."""
+    parametrized_enrolled_sat.execute(f'cp {HAMMER_CONFIG} {HAMMER_CONFIG}.backup')
+    parametrized_enrolled_sat.execute(f"sed -i '/:default_auth_type.*/d' {HAMMER_CONFIG}")
+    yield
+    parametrized_enrolled_sat.execute(f'mv -f {HAMMER_CONFIG}.backup {HAMMER_CONFIG}')
+
+
+@pytest.mark.external_auth
+@pytest.fixture(scope='function')
+def hammer_logout(parametrized_enrolled_sat):
+    """Logout in Hammer."""
+    result = parametrized_enrolled_sat.cli.Auth.logout()
+    assert result[0]['message'] == LOGGEDOUT
+    yield
+    result = parametrized_enrolled_sat.cli.Auth.logout()
+    assert result[0]['message'] == LOGGEDOUT
 
 
 @pytest.fixture
@@ -559,22 +614,33 @@ def sessions_tear_down(parametrized_enrolled_sat):
     )
 
 
-@pytest.fixture(scope='module', params=['IDM', 'AD'])
-def parametrized_enrolled_sat(
+@pytest.fixture
+def configure_ipa_api(
     request,
-    satellite_factory,
-    ad_data,
+    parametrized_enrolled_sat,
+    enabled=True,
 ):
-    """Yields a Satellite enrolled into [IDM, AD] as parameter."""
-    new_sat = satellite_factory()
-    new_sat.register_to_cdn()
-    if 'IDM' in request.param:
-        enroll_idm_and_configure_external_auth(new_sat)
-        yield new_sat
-        disenroll_idm(new_sat)
-    else:
-        enroll_ad_and_configure_external_auth(request, ad_data, new_sat)
-        yield new_sat
-    new_sat.unregister()
-    new_sat.teardown()
-    Broker(hosts=[new_sat]).checkin()
+    """Enable Kerberos authentication in Hammer."""
+    if enabled:
+        # Normal ipa authentication needs to be enabled already
+        assert (
+            parametrized_enrolled_sat.execute(
+                'satellite-installer --help | grep foreman-ipa-authentication[^-] | grep true'
+            ).status
+            == 0
+        )
+    original_value = (
+        parametrized_enrolled_sat.execute(
+            'satellite-installer --help | grep foreman-ipa-authentication-api | grep true'
+        ).status
+        == 0
+    )
+    result = parametrized_enrolled_sat.install(
+        InstallerCommand(f'foreman-ipa-authentication-api {"true" if enabled else "false"}')
+    )
+    assert result.status == 0, 'Installer failed to enable IPA API authentication.'
+    yield
+    result = parametrized_enrolled_sat.install(
+        InstallerCommand(f'foreman-ipa-authentication-api {"true" if original_value else "false"}')
+    )
+    assert result.status == 0, 'Installer failed to reset IPA API authentication.'

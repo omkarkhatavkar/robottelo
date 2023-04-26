@@ -87,15 +87,10 @@ import json
 import os
 
 import pytest
-from automation_tools.satellite6.hammer import set_hammer_config
-from fabric.api import env
+from box import Box
 
-from robottelo.config import settings
 from robottelo.logging import logger
 from robottelo.utils.decorators.func_locker import lock_function
-
-
-pytest_plugins = 'tests.upgrades.scenario_workers'
 
 pre_upgrade_failed_tests = []
 
@@ -163,6 +158,23 @@ def get_entity_data(scenario_name):
     return entity_data
 
 
+def get_all_entity_data():
+    """Retrieves a dictionary containing data for entities in all scenarios.
+
+    Reads the contents of the 'scenario_entities' file using the JSON format,
+    and returns the resulting dictionary of entity data.
+
+    Returns:
+    -------
+    dict:
+        A dictionary containing information on entities in all scenarios,
+        with scenario_name as keys and corresponding attribute data as values.
+    """
+    with open('scenario_entities') as pref:
+        entity_data = json.load(pref)
+    return entity_data
+
+
 def _read_test_data(test_node_id):
     """Read the saved data of test at node id"""
     try:
@@ -226,7 +238,32 @@ def pre_upgrade_data(request):
     data = [_read_test_data(test_node_id) for test_node_id in depend_on_node_ids]
     if len(data) == 1:
         data = data[0]
-    return data
+    return Box(data)
+
+
+@pytest.fixture(scope='class')
+def class_pre_upgrade_data(request):
+    """Returns a dictionary of entity data for a specific upgrade test classes.
+
+    Filters the output of get_all_entity_data() to include only entities that
+    match the test class name and the name of the test function currently being run.
+
+    Args:
+    -----
+    request (pytest.FixtureRequest): A pytest FixtureRequest object containing
+    information about the current test.
+
+    Returns:
+    -------
+    Box: A Box object containing information on entities in the upgrade test class,
+    with entity IDs as keys and corresponding attribute data as values.
+    """
+    data = {
+        key: value
+        for key, value in get_all_entity_data().items()
+        if f"{request.node.parent.name}::{request.node.name}" in key
+    }
+    return Box(data)
 
 
 def pytest_configure(config):
@@ -238,15 +275,6 @@ def pytest_configure(config):
     ]
     for marker in markers:
         config.addinivalue_line("markers", marker)
-
-
-def pytest_sessionstart(session):
-    """Do some setup for automation-tools and satellite6-upgrade"""
-    # Fabric Config setup
-    env.host_string = settings.server.hostname
-    env.user = settings.server.ssh_username
-    # Hammer Config Setup
-    set_hammer_config(user=settings.server.admin_username, password=settings.server.admin_password)
 
 
 def pytest_addoption(parser):
@@ -281,10 +309,12 @@ def __initiate(config):
         for upgrade_mark in (PRE_UPGRADE_MARK, POST_UPGRADE_MARK)
         if upgrade_mark in config.option.markexpr
     ]:
-        pytest.skip(
-            'options error: pre_upgrade or post_upgrade marks must be selected',
-            allow_module_level=True,
-        )
+        # Raise only if the `tests/upgrades` directory is selected
+        if 'upgrades' in config.args[0]:
+            pytest.fail(
+                f'For upgrade scenarios either {PRE_UPGRADE_MARK} or {POST_UPGRADE_MARK} mark '
+                'must be provided'
+            )
     if PRE_UPGRADE_MARK in config.option.markexpr:
         pre_upgrade_failed_tests = []
         PRE_UPGRADE = True

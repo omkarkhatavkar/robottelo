@@ -13,6 +13,7 @@ VALIDATORS = dict(
         Validator('server.hostnames', must_exist=True, is_type_of=list),
         Validator('server.version.release', must_exist=True),
         Validator('server.version.source', must_exist=True),
+        Validator('server.version.rhel_version', must_exist=True, cast=str),
         Validator(
             'server.xdist_behavior', must_exist=True, is_in=['run-on-one', 'balance', 'on-demand']
         ),
@@ -199,6 +200,14 @@ VALIDATORS = dict(
             must_exist=True,
         ),
     ],
+    ohsnap=[
+        Validator(
+            'ohsnap.host',
+            'ohsnap.request_retry.timeout',
+            'ohsnap.request_retry.delay',
+            must_exist=True,
+        ),
+    ],
     open_ldap=[
         Validator(
             'open_ldap.base_dn',
@@ -254,7 +263,6 @@ VALIDATORS = dict(
             'repos.rhscl_repo',
             'repos.ansible_repo',
             'repos.swid_tools_repo',
-            'repos.ohsnap_repo_host',
             must_exist=True,
             is_type_of=str,
         ),

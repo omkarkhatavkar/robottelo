@@ -12,7 +12,7 @@ https://<sat6.com>/apidoc/v2/subscriptions.html
 
 :CaseComponent: SubscriptionManagement
 
-:Team: Phoenix
+:team: Phoenix-subscriptions
 
 :TestType: Functional
 
@@ -22,15 +22,12 @@ https://<sat6.com>/apidoc/v2/subscriptions.html
 """
 import pytest
 from fauxfactory import gen_string
-from manifester import Manifester
 from nailgun import entities
 from nailgun.config import ServerConfig
 from nailgun.entity_mixins import TaskFailedError
 from requests.exceptions import HTTPError
 
-from robottelo.api.utils import enable_rhrepo_and_fetchid
 from robottelo.cli.subscription import Subscription
-from robottelo.config import settings
 from robottelo.constants import DEFAULT_SUBSCRIPTION_NAME
 from robottelo.constants import PRDS
 from robottelo.constants import REPOS
@@ -41,8 +38,8 @@ pytestmark = [pytest.mark.run_in_one_thread]
 
 
 @pytest.fixture(scope='module')
-def rh_repo(module_sca_manifest_org):
-    rh_repo_id = enable_rhrepo_and_fetchid(
+def rh_repo(module_sca_manifest_org, module_target_sat):
+    rh_repo_id = module_target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch='x86_64',
         org_id=module_sca_manifest_org.id,
         product=PRDS['rhel'],
@@ -75,14 +72,6 @@ def module_ak(module_sca_manifest_org, rh_repo, custom_repo):
         auto_attach=True,
     ).create()
     return module_ak
-
-
-@pytest.fixture(scope='function')
-def duplicate_manifest():
-    """Provides a function-scoped manifest that can be used alongside function_entitlement_manifest
-    when two manifests are required in a single test"""
-    with Manifester(manifest_category=settings.manifest.entitlement) as manifest:
-        yield manifest
 
 
 @pytest.mark.tier1
@@ -119,7 +108,7 @@ def test_positive_refresh(function_entitlement_manifest_org, request):
 
 @pytest.mark.tier1
 def test_positive_create_after_refresh(
-    function_entitlement_manifest_org, duplicate_manifest, target_sat
+    function_entitlement_manifest_org, function_secondary_entitlement_manifest, target_sat
 ):
     """Upload a manifest,refresh it and upload a new manifest to an other
      organization.
@@ -140,7 +129,7 @@ def test_positive_create_after_refresh(
     try:
         org_sub.refresh_manifest(data={'organization_id': function_entitlement_manifest_org.id})
         assert org_sub.search()
-        target_sat.upload_manifest(new_org.id, duplicate_manifest.content)
+        target_sat.upload_manifest(new_org.id, function_secondary_entitlement_manifest.content)
         assert new_org_sub.search()
     finally:
         org_sub.delete_manifest(data={'organization_id': function_entitlement_manifest_org.id})
@@ -392,7 +381,7 @@ def test_positive_expired_SCA_cert_handling(module_sca_manifest_org, rhel7_conte
 
     :CustomerScenario: true
 
-    :Team: Phoenix
+    :team: Phoenix-subscriptions
 
     :BZ: 1949353
 
@@ -417,7 +406,7 @@ def test_positive_expired_SCA_cert_handling(module_sca_manifest_org, rhel7_conte
     rhel7_contenthost.unregister()
     # syncing content with the content host unregistered should invalidate
     # the previous client SCA cert
-    rh_repo_id = enable_rhrepo_and_fetchid(
+    rh_repo_id = target_sat.api_factory.enable_rhrepo_and_fetchid(
         basearch='x86_64',
         org_id=module_sca_manifest_org.id,
         product=PRDS['rhel'],
@@ -457,3 +446,39 @@ def test_positive_os_restriction_on_repos():
 
     :CaseAutomation: NotAutomated
     """
+
+
+def test_positive_async_endpoint_for_manifest_refresh(
+    target_sat, function_entitlement_manifest_org
+):
+    """Verify that manifest refresh is using an async endpoint. Previously this was a single,
+    synchronous endpoint. The endpoint to retrieve manifests is now split into two: an async
+    endpoint to start "exporting" the manifest, and a second endpoint to download the
+    exported manifest.
+
+    :id: c25c5290-44ae-4f56-82cf-d118fefeff86
+
+    :steps:
+        1. Refresh a manifest
+        2. Check the production.log for "Sending GET request to upstream Candlepin"
+
+    :expectedresults: Manifest refresh succeeds with no errors and production.log
+        has new debug message
+
+    :customerscenario: true
+
+    :BZ: 2066323
+    """
+    sub = target_sat.api.Subscription(organization=function_entitlement_manifest_org)
+    # set log level to 'debug' and restart services
+    target_sat.cli.Admin.logging({'all': True, 'level-debug': True})
+    target_sat.cli.Service.restart()
+    # refresh manifest and assert new log message to confirm async endpoint
+    sub.refresh_manifest(data={'organization_id': function_entitlement_manifest_org.id})
+    results = target_sat.execute(
+        'grep "Sending GET request to upstream Candlepin" /var/log/foreman/production.log'
+    )
+    assert 'Sending GET request to upstream Candlepin' in str(results)
+    # set log level back to default
+    target_sat.cli.Admin.logging({'all': True, 'level-production': True})
+    target_sat.cli.Service.restart()

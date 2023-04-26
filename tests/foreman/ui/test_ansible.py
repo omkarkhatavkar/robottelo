@@ -17,9 +17,11 @@
 :Upstream: No
 """
 import pytest
+import yaml
 from fauxfactory import gen_string
 
 from robottelo import constants
+from robottelo.config import robottelo_tmp_dir
 from robottelo.config import settings
 
 
@@ -139,6 +141,8 @@ def test_positive_config_report_ansible(session, target_sat, module_org, rhel_co
     :expectedresults:
         1. Host should be assigned the proper role.
         2. Job report should be created.
+
+    :CaseImportance: Critical
     """
     SELECTED_ROLE = 'RedHatInsights.insights-client'
     if rhel_contenthost.os_version.major <= 7:
@@ -151,27 +155,226 @@ def test_positive_config_report_ansible(session, target_sat, module_org, rhel_co
     id = target_sat.nailgun_smart_proxy.id
     target_host = rhel_contenthost.nailgun_host
     target_sat.api.AnsibleRoles().sync(data={'proxy_id': id, 'role_names': [SELECTED_ROLE]})
-    target_host.assign_ansible_roles(data={'ansible_role_ids': [1]})
+    target_sat.cli.Host.ansible_roles_assign({'id': target_host.id, 'ansible-roles': SELECTED_ROLE})
     host_roles = target_host.list_ansible_roles()
     assert host_roles[0]['name'] == SELECTED_ROLE
+    template_id = (
+        target_sat.api.JobTemplate()
+        .search(query={'search': 'name="Ansible Roles - Ansible Default"'})[0]
+        .id
+    )
+    job = target_sat.api.JobInvocation().run(
+        synchronous=False,
+        data={
+            'job_template_id': template_id,
+            'targeting_type': 'static_query',
+            'search_query': f'name = {rhel_contenthost.hostname}',
+        },
+    )
+    target_sat.wait_for_tasks(
+        f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1000
+    )
+    result = target_sat.api.JobInvocation(id=job['id']).read()
+    assert result.succeeded == 1
     with session:
-        session.organization.select(module_org.name)
         session.location.select(constants.DEFAULT_LOC)
         assert session.host.search(target_host.name)[0]['Name'] == rhel_contenthost.hostname
-        session.jobinvocation.run(
-            {
-                'job_category': 'Ansible Playbook',
-                'job_template': 'Ansible Roles - Ansible Default',
-                'search_query': f'name ^ {rhel_contenthost.hostname}',
-            }
-        )
-        session.jobinvocation.wait_job_invocation_state(
-            entity_name='Run ansible roles', host_name=rhel_contenthost.hostname
-        )
-        status = session.jobinvocation.read(
-            entity_name='Run ansible roles', host_name=rhel_contenthost.hostname
-        )
-        assert status['overview']['hosts_table'][0]['Status'] == 'success'
         session.configreport.search(rhel_contenthost.hostname)
         session.configreport.delete(rhel_contenthost.hostname)
         assert len(session.configreport.read()['table']) == 0
+
+
+@pytest.mark.no_containers
+@pytest.mark.rhel_ver_match('9')
+def test_positive_ansible_custom_role(target_sat, session, module_org, rhel_contenthost, request):
+    """
+    Test Config report generation with Custom Ansible Role
+
+    :id: 3551068a-ccfc-481c-b7ec-8fe2b8a802bf
+
+    :customerscenario: true
+
+    :Steps:
+        1. Register a content host with satellite
+        2. Create a  custom role and import  into satellite
+        3. Assign that role to a host
+        4. Assert that the role was assigned to the host successfully
+        5. Run the Ansible playbook associated with that role
+        6. Check if the report is created successfully
+
+    :expectedresults:
+        1. Config report should be generated for a custom role run.
+
+    :BZ: 2155392
+
+    :CaseAutomation: Automated
+    """
+    SELECTED_ROLE = 'custom_role'
+    playbook = f'{robottelo_tmp_dir}/playbook.yml'
+    data = {
+        'name': 'Copy ssh keys',
+        'copy': {
+            'src': '/var/lib/foreman-proxy/ssh/{{ item }}',
+            'dest': '/root/.ssh',
+            'owner': 'root',
+            "group": 'root',
+            'mode': '0400',
+        },
+        'with_items': ['id_rsa_foreman_proxy.pub', 'id_rsa_foreman_proxy'],
+    }
+    with open(playbook, 'w') as f:
+        yaml.dump(data, f, sort_keys=False, default_flow_style=False)
+    target_sat.execute('mkdir /etc/ansible/roles/custom_role')
+    target_sat.put(playbook, '/etc/ansible/roles/custom_role/playbook.yaml')
+    rhel_contenthost.install_katello_ca(target_sat)
+    rhel_contenthost.register_contenthost(module_org.label, force=True)
+    assert rhel_contenthost.subscribed
+    rhel_contenthost.add_rex_key(satellite=target_sat)
+    proxy_id = target_sat.nailgun_smart_proxy.id
+    target_host = rhel_contenthost.nailgun_host
+    target_sat.api.AnsibleRoles().sync(data={'proxy_id': proxy_id, 'role_names': [SELECTED_ROLE]})
+    target_sat.cli.Host.ansible_roles_assign({'id': target_host.id, 'ansible-roles': SELECTED_ROLE})
+    host_roles = target_host.list_ansible_roles()
+    assert host_roles[0]['name'] == SELECTED_ROLE
+
+    template_id = (
+        target_sat.api.JobTemplate()
+        .search(query={'search': 'name="Ansible Roles - Ansible Default"'})[0]
+        .id
+    )
+    job = target_sat.api.JobInvocation().run(
+        synchronous=False,
+        data={
+            'job_template_id': template_id,
+            'targeting_type': 'static_query',
+            'search_query': f'name = {rhel_contenthost.hostname}',
+        },
+    )
+    target_sat.wait_for_tasks(
+        f'resource_type = JobInvocation and resource_id = {job["id"]}', poll_timeout=1000
+    )
+    result = target_sat.api.JobInvocation(id=job['id']).read()
+    assert result.succeeded == 1
+    with session:
+        session.location.select(constants.DEFAULT_LOC)
+        assert session.host.search(target_host.name)[0]['Name'] == rhel_contenthost.hostname
+        session.configreport.search(rhel_contenthost.hostname)
+        session.configreport.delete(rhel_contenthost.hostname)
+        assert len(session.configreport.read()['table']) == 0
+
+    @request.addfinalizer
+    def _finalize():
+        result = target_sat.cli.Ansible.roles_delete({'name': SELECTED_ROLE})
+        assert f'Ansible role [{SELECTED_ROLE}] was deleted.' in result[0]['message']
+        target_sat.execute('rm -rvf /etc/ansible/roles/custom_role')
+
+
+@pytest.mark.tier2
+def test_positive_host_role_information(target_sat, function_host):
+    """Assign Ansible Role to a Host and verify that the information
+    in the new UI is displayed correctly
+
+    :id: 7da913ef-3b43-4bfa-9a45-d895431c8b56
+
+    :CaseLevel: System
+
+    :Steps:
+        1. Register a RHEL host to Satellite.
+        2. Import all roles available by default.
+        3. Assign one role to the RHEL host.
+        4. Navigate to the new UI for the given Host.
+        5. Select the 'Ansible' tab, then the 'Inventory' sub-tab.
+
+    :expectedresults: Roles assigned directly to the Host are visible on the subtab.
+
+    """
+    SELECTED_ROLE = 'RedHatInsights.insights-client'
+
+    location = function_host.location.read()
+    organization = function_host.organization.read()
+    proxy_id = target_sat.nailgun_smart_proxy.id
+    target_sat.api.AnsibleRoles().sync(data={'proxy_id': proxy_id, 'role_names': [SELECTED_ROLE]})
+    target_sat.cli.Host.ansible_roles_assign(
+        {'id': function_host.id, 'ansible-roles': SELECTED_ROLE}
+    )
+    host_roles = function_host.list_ansible_roles()
+    assert host_roles[0]['name'] == SELECTED_ROLE
+    with target_sat.ui_session() as session:
+        session.location.select(location.name)
+        session.organization.select(organization.name)
+        ansible_roles_table = session.host_new.get_ansible_roles(function_host.name)
+        assert ansible_roles_table[0]["Name"] == SELECTED_ROLE
+        all_assigned_roles_table = session.host_new.get_ansible_roles_modal(function_host.name)
+        assert all_assigned_roles_table[0]["Name"] == SELECTED_ROLE
+
+
+@pytest.mark.stubbed
+@pytest.mark.tier2
+def test_positive_role_variable_information(self):
+    """Create and assign variables to an Ansible Role and verify that the information in
+    the new UI is displayed correctly
+
+    :id: 4ab2813a-6b83-4907-b104-0473465814f5
+
+    :CaseLevel: System
+
+    :Steps:
+        1. Register a RHEL host to Satellite.
+        2. Import all roles available by default.
+        3. Create a host group and assign one of the Ansible roles to the host group.
+        4. Assign the host to the host group.
+        5. Assign one roles to the RHEL host.
+        6. Create a variable and associate it with the role assigned to the Host.
+        7. Create a variable and associate it with the role assigned to the Hostgroup.
+        8. Navigate to the new UI for the given Host.
+        9. Select the 'Ansible' tab, then the 'Variables' sub-tab.
+
+    :expectedresults: The variables information for the given Host is visible.
+
+    """
+
+
+@pytest.mark.stubbed
+@pytest.mark.tier2
+def test_positive_assign_role_in_new_ui(self):
+    """Using the new Host UI, assign a role to a Host
+
+    :id: 044f38b4-cff2-4ddc-b93c-7e9f2826d00d
+
+    :CaseLevel: System
+
+    :Steps:
+        1. Register a RHEL host to Satellite.
+        2. Import all roles available by default.
+        3. Navigate to the new UI for the given Host.
+        4. Select the 'Ansible' tab
+        5. Click the 'Assign Ansible Roles' button.
+        6. Using the popup, assign a role to the Host.
+
+    :expectedresults: The Role is successfully assigned to the Host, and shows up on the UI
+
+    """
+
+
+@pytest.mark.stubbed
+@pytest.mark.tier2
+def test_positive_remove_role_in_new_ui(self):
+    """Using the new Host UI, remove the role(s) of a Host
+
+    :id: d6de5130-45f6-4349-b490-fbde2aed082c
+
+    :CaseLevel: System
+
+    :Steps:
+        1. Register a RHEL host to Satellite.
+        2. Import all roles available by default.
+        3. Assign a role to the host.
+        4. Navigate to the new UI for the given Host.
+        5. Select the 'Ansible' tab
+        6. Click the 'Edit Ansible roles' button.
+        7. Using the popup, remove the assigned role from the Host.
+
+    :expectedresults: The Role is successfully removed from the Host, and no longer shows
+        up on the UI
+
+    """

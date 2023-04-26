@@ -12,6 +12,7 @@ class Colored(Box):
     REDDARK = '\033[1;31m'
     GREEN = '\033[1;32m'
     WHITELIGHT = '\033[1;30m'
+    RESET = '\033[0m'
 
 
 # This should be updated after each version branch
@@ -42,11 +43,12 @@ LOCALES = (
 
 
 DISTRO_DEFAULT = 'rhel7'
-DISTROS_SUPPORTED = ['rhel6', 'rhel7', 'rhel8']
+DISTROS_SUPPORTED = ['rhel6', 'rhel7', 'rhel8', 'rhel9']
 DISTROS_MAJOR_VERSION = {
     'rhel6': 6,
     'rhel7': 7,
     'rhel8': 8,
+    'rhel9': 9,
 }
 MAJOR_VERSION_DISTRO = {value: key for key, value in DISTROS_MAJOR_VERSION.items()}
 
@@ -233,6 +235,7 @@ MIRRORING_POLICIES = {
 PRODUCT_KEY_RHEL = 'rhel'
 PRODUCT_KEY_SAT_TOOLS = 'rhst'
 PRODUCT_KEY_SAT_CAPSULE = 'rhsc'
+PRODUCT_KEY_SAT_CLIENT = 'rhsclient'
 PRODUCT_KEY_VIRT_AGENTS = 'rhva6'
 PRODUCT_KEY_CLOUD_FORMS_TOOLS = 'rhct6'
 PRODUCT_KEY_ANSIBLE_ENGINE = 'rhae2'
@@ -282,6 +285,9 @@ REPOSET = {
     'rhsc7': 'Red Hat Satellite Capsule 6.9 (for RHEL 7 Server) (RPMs)',
     'rhsc7_iso': 'Red Hat Satellite Capsule 6.4 (for RHEL 7 Server) (ISOs)',
     'rhsc6': 'Red Hat Satellite Capsule 6.9 (for RHEL 6 Server) (RPMs)',
+    'rhsclient7': 'Red Hat Satellite Client 6 for RHEL 7 Server RPMs x86_64',
+    'rhsclient8': 'Red Hat Satellite Client 6 for RHEL 8 x86_64 RPMs',
+    'rhsclient9': 'Red Hat Satellite Client 6 for RHEL 9 x86_64 RPMs',
     'rhst7': 'Red Hat Satellite Tools 6.9 (for RHEL 7 Server) (RPMs)',
     'rhst7_610': 'Red Hat Satellite Tools 6.10 (for RHEL 7 Server) (RPMs)',
     'rhst6': 'Red Hat Satellite Tools 6.9 (for RHEL 6 Server) (RPMs)',
@@ -289,6 +295,7 @@ REPOSET = {
     'rhdt7': ('Red Hat Developer Tools RPMs for Red Hat Enterprise Linux 7 Server'),
     'rhscl7': ('Red Hat Software Collections RPMs for Red Hat Enterprise Linux 7 Server'),
     'rhae2': 'Red Hat Ansible Engine 2.9 RPMs for Red Hat Enterprise Linux 7 Server',
+    'rhae2.9_el8': 'Red Hat Ansible Engine 2.9 for RHEL 8 x86_64 (RPMs)',
     'rhst8': 'Red Hat Satellite Tools 6.9 for RHEL 8 x86_64 (RPMs)',
     'fdrh8': 'Fast Datapath for RHEL 8 x86_64 (RPMs)',
     'kickstart': {
@@ -375,6 +382,33 @@ REPOS = {
         'distro': 'rhel6',
         'key': 'rhsc',
     },
+    'rhsclient7': {
+        'id': 'rhel-7-server-satellite-client-6-rpms',
+        'name': ('Red Hat Satellite Client 6 for RHEL 7 Server RPMs x86_64'),
+        'version': '6',
+        'reposet': REPOSET['rhsclient7'],
+        'product': PRDS['rhel'],
+        'distro': 'rhel7',
+        'key': PRODUCT_KEY_SAT_CLIENT,
+    },
+    'rhsclient8': {
+        'id': 'satellite-client-6-for-rhel-8-x86_64-rpms',
+        'name': ('Red Hat Satellite Client 6 for RHEL 8 x86_64 RPMs'),
+        'version': '6',
+        'reposet': REPOSET['rhsclient8'],
+        'product': PRDS['rhel'],
+        'distro': 'rhel8',
+        'key': PRODUCT_KEY_SAT_CLIENT,
+    },
+    'rhsclient9': {
+        'id': 'satellite-client-6-for-rhel-9-x86_64-rpms',
+        'name': ('Red Hat Satellite Client 6 for RHEL 9 x86_64 RPMs'),
+        'version': '6',
+        'reposet': REPOSET['rhsclient9'],
+        'product': PRDS['rhel'],
+        'distro': 'rhel9',
+        'key': PRODUCT_KEY_SAT_CLIENT,
+    },
     'rhst7': {
         'id': 'rhel-7-server-satellite-tools-6.9-rpms',
         'name': ('Red Hat Satellite Tools 6.9 for RHEL 7 Server RPMs x86_64'),
@@ -445,6 +479,17 @@ REPOS = {
         'distro': 'rhel7',
         'key': 'rhae2',
     },
+    'rhae2.9_el8': {
+        'id': 'ansible-2.9-for-rhel-8-x86_64-rpms',
+        'name': 'Red Hat Ansible Engine 2.9 for RHEL 8 x86_64 RPMs',
+        'version': '2.9',
+        'releasever': None,
+        'arch': 'x86_64',
+        'reposet': REPOSET['rhae2.9_el8'],
+        'product': PRDS['rhae'],
+        'distro': 'rhel8',
+        'key': 'rhae2.9_el8',
+    },
     'rhst8': {
         'id': 'satellite-tools-6.9-for-rhel-8-x86_64-rpms',
         'name': 'Red Hat Satellite Tools 6.9 for RHEL 8 x86_64 RPMs',
@@ -489,16 +534,16 @@ REPOS = {
         },
         'rhel9_bos': {
             'id': 'rhel-9-for-x86_64-baseos-kickstart',
-            'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS Kickstart 9.0',
-            'version': '9.0',
+            'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS Kickstart 9.1',
+            'version': '9.1',
             'reposet': REPOSET['kickstart']['rhel9'],
             'product': PRDS['rhel9'],
             'distro': 'rhel9',
         },
         'rhel9_aps': {
             'id': 'rhel-9-for-x86_64-appstream-kickstart',
-            'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream Kickstart 9.0',
-            'version': '9.0',
+            'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream Kickstart 9.1',
+            'version': '9.1',
             'reposet': REPOSET['kickstart']['rhel9_aps'],
             'product': PRDS['rhel9'],
             'distro': 'rhel9',
@@ -735,7 +780,7 @@ FAKE_9_YUM_UPDATED_PACKAGES = [
     'duck-0.6-1.noarch',
     'gorilla-0.62-1.noarch',
     'penguin-0.9.1-1.noarch',
-    'stork-0.12-1.noarch',
+    'stork-0.12-2.noarch',
     'walrus-5.21-1.noarch',
     'kangaroo-0.2-1.noarch',
 ]
@@ -773,7 +818,6 @@ FAKE_0_CUSTOM_PACKAGE_GROUP = [
     'penguin-0.9.1-1.noarch',
     'stork-0.12-2.noarch',
 ]
-
 FAKE_1_YUM_REPO_RPMS = ['bear-4.1-1.noarch.rpm', 'camel-0.1-1.noarch.rpm', 'cat-1.0-1.noarch.rpm']
 FAKE_3_YUM_REPO_RPMS = [
     'ant-7.7.7-1.noarch.rpm',
@@ -781,7 +825,6 @@ FAKE_3_YUM_REPO_RPMS = [
     'seal-1.0.10-1.noarch.rpm',
 ]
 FAKE_0_YUM_REPO_STRING_BASED_VERSIONS_COUNTS = {'rpm': 35, 'package_group': 2, 'erratum': 4}
-PULP_PUBLISHED_YUM_REPOS_PATH = '/var/lib/pulp/published/yum/http/repos'
 
 FAKE_FILE_LARGE_URL = 'https://fixtures.pulpproject.org/file-large/'
 FAKE_FILE_LARGE_COUNT = 10
@@ -800,6 +843,24 @@ CUSTOM_PUPPET_MODULE_REPOS = {
     'ui_test_variables': 'robottelo-ui_test_variables',
 }
 CUSTOM_PUPPET_MODULE_REPOS_VERSION = '-0.2.0.tar.gz'
+
+PULP_EXPORT_DIR = '/var/lib/pulp/exports/'
+PULP_IMPORT_DIR = '/var/lib/pulp/imports/'
+
+PUPPET_COMMON_INSTALLER_OPTS = {
+    'foreman-proxy-puppetca': 'true',
+    'foreman-proxy-puppet': 'true',
+    'puppet-server': 'true',
+    # Options for puppetbootstrap test
+    'foreman-proxy-templates': 'true',
+    'foreman-proxy-http': 'true',
+}
+PUPPET_SATELLITE_INSTALLER = [
+    'enable-puppet',
+    'enable-foreman-plugin-puppet',
+    'enable-foreman-cli-puppet',
+]
+PUPPET_CAPSULE_INSTALLER = ['enable-puppet']
 
 KICKSTART_CONTENT = [
     'treeinfo',
@@ -1445,7 +1506,7 @@ PERMISSIONS_UI = {
 }
 
 
-ANY_CONTEXT = {'org': "Any Organization", 'location': "Any Location"}
+ANY_CONTEXT = {'org': "Any organization", 'location': "Any location"}
 
 SUBNET_IPAM_TYPES = {'dhcp': 'DHCP', 'internal': 'Internal DB', 'none': 'None'}
 
@@ -1481,7 +1542,6 @@ OSCAP_WEEKDAY = {
 OSCAP_DEFAULT_CONTENT = {
     'rhel6_content': 'Red Hat rhel6 default content',
     'rhel7_content': 'Red Hat rhel7 default content',
-    'jre_content': 'Red Hat jre default content',
     'rhel8_content': 'Red Hat rhel8 default content',
     'rhel_firefox': 'Red Hat firefox default content',
 }
@@ -1493,7 +1553,7 @@ OSCAP_PROFILE = {
     'dsrhel8': '[DRAFT] DISA STIG for Red Hat Enterprise Linux 8',
     'esp': 'Example Server Profile',
     'rhccp': 'Red Hat Corporate Profile for Certified Cloud Providers (RH CCP)',
-    'firefox': 'Upstream Firefox STIG',
+    'firefox': 'Mozilla Firefox STIG',
     'tailoring_rhel7': (
         'Standard System Security Profile for Red Hat Enterprise Linux 7 [CUSTOMIZED]'
     ),

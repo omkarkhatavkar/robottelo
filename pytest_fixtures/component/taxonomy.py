@@ -21,6 +21,20 @@ def default_location(session_target_sat):
 
 
 @pytest.fixture
+def current_sat_org(target_sat):
+    """Return the current organization assigned to the Satellite host"""
+    sat_host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
+    return sat_host.organization.read().name
+
+
+@pytest.fixture
+def current_sat_location(target_sat):
+    """Return the current location assigned to the Satellite host"""
+    sat_host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
+    return sat_host.location.read().name
+
+
+@pytest.fixture
 def function_org(target_sat):
     return target_sat.api.Organization().create()
 
@@ -112,6 +126,16 @@ def function_entitlement_manifest_org(function_org, function_entitlement_manifes
 
 
 @pytest.fixture
+def upgrade_entitlement_manifest_org(function_org, upgrade_entitlement_manifest, target_sat):
+    """A Pytest fixture that creates an organization and uploads an entitlement mode manifest
+    generated with Manifester. This will be used for upgrade scenarios"""
+    entitlement_manifest, _ = upgrade_entitlement_manifest
+    function_org.sca_disable()
+    target_sat.upload_manifest(function_org.id, entitlement_manifest.content)
+    return function_org
+
+
+@pytest.fixture
 def function_sca_manifest_org(function_org, function_sca_manifest, target_sat):
     """Creates an organization and uploads an SCA mode manifest generated with manifester"""
     target_sat.upload_manifest(function_org.id, function_sca_manifest.content)
@@ -183,6 +207,15 @@ def function_entitlement_manifest():
 
 
 @pytest.fixture(scope='function')
+def function_secondary_entitlement_manifest():
+    """Yields a manifest in entitlement mode with subscriptions determined by the
+    `manifest_category.entitlement` setting in conf/manifest.yaml.
+    A different one than is used in `function_entitlement_manifest_org`."""
+    with Manifester(manifest_category=settings.manifest.entitlement) as manifest:
+        yield manifest
+
+
+@pytest.fixture(scope='function')
 def function_sca_manifest():
     """Yields a manifest in Simple Content Access mode with subscriptions determined by the
     `manifest_category.golden_ticket` setting in conf/manifest.yaml."""
@@ -196,3 +229,12 @@ def smart_proxy_location(module_org, module_target_sat, default_smart_proxy):
     default_smart_proxy.location.append(module_target_sat.api.Location(id=location.id))
     default_smart_proxy.update(['location'])
     return location
+
+
+@pytest.fixture(scope='function')
+def upgrade_entitlement_manifest():
+    """Returns a manifest in entitlement mode with subscriptions determined by the
+    `manifest_category.entitlement` setting in conf/manifest.yaml. used only for
+    upgrade scenarios"""
+    manifestor = Manifester(manifest_category=settings.manifest.entitlement)
+    return manifestor.get_manifest(), manifestor

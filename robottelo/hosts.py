@@ -21,6 +21,7 @@ from broker.hosts import Host
 from dynaconf.vendor.box.exceptions import BoxKeyError
 from fauxfactory import gen_alpha
 from fauxfactory import gen_string
+from manifester import Manifester
 from nailgun import entities
 from packaging.version import Version
 from ssh2.exceptions import AuthenticationError
@@ -29,7 +30,6 @@ from wait_for import wait_for
 from wrapanapi.entities.vm import VmState
 
 from robottelo import constants
-from robottelo.api.utils import update_provisioning_template
 from robottelo.cli.base import Base
 from robottelo.cli.factory import CLIFactoryError
 from robottelo.config import configure_airgun
@@ -39,8 +39,12 @@ from robottelo.config import settings
 from robottelo.constants import CUSTOM_PUPPET_MODULE_REPOS
 from robottelo.constants import CUSTOM_PUPPET_MODULE_REPOS_PATH
 from robottelo.constants import CUSTOM_PUPPET_MODULE_REPOS_VERSION
+from robottelo.constants import DEFAULT_ARCHITECTURE
 from robottelo.constants import HAMMER_CONFIG
 from robottelo.constants import KEY_CLOAK_CLI
+from robottelo.constants import PRDS
+from robottelo.constants import REPOS
+from robottelo.constants import REPOSET
 from robottelo.constants import RHSSO_NEW_GROUP
 from robottelo.constants import RHSSO_NEW_USER
 from robottelo.constants import RHSSO_RESET_PASSWORD
@@ -72,11 +76,9 @@ def get_sat_version():
     try:
         sat_version = Satellite().version
     except (AuthenticationError, ContentHostError, BoxKeyError):
-        if hasattr(settings.server.version, 'release'):
-            sat_version = str(settings.server.version.release)
-        elif hasattr(settings.robottelo, 'satellite_version'):
-            sat_version = settings.robottelo.satellite_version
-        else:
+        if sat_version := str(settings.server.version.get('release')) == 'stream':
+            sat_version = str(settings.robottelo.get('satellite_version'))
+        if not sat_version:
             sat_version = SATELLITE_VERSION
     return Version('9999' if 'nightly' in sat_version else sat_version)
 
@@ -86,7 +88,7 @@ def get_sat_rhel_version():
     if not available fallback to robottelo configuration."""
 
     try:
-        rhel_version = Satellite().os_version
+        return Satellite().os_version
     except (AuthenticationError, ContentHostError, BoxKeyError):
         if hasattr(settings.server.version, 'rhel_version'):
             rhel_version = str(settings.server.version.rhel_version)
@@ -95,18 +97,39 @@ def get_sat_rhel_version():
     return Version(rhel_version)
 
 
-def setup_capsule(satellite, capsule, registration_args=None, installation_args=None):
+def setup_capsule(satellite, capsule, org, registration_args=None, installation_args=None):
     """Given satellite and capsule instances, run the commands needed to set up the capsule
 
     Note: This does not perform content setup actions on the Satellite
 
     :param satellite: An instance of this module's Satellite class
     :param capsule: An instance of this module's Capsule class
+    :param org: An instance of the org to use on the Satellite
     :param registration_args: A dictionary mapping argument: value pairs for registration
     :param installation_args: A dictionary mapping argument: value pairs for installation
     :return: An ssh2-python result object for the installation command.
 
     """
+    # Unregister capsule incase it's registered to CDN
+    capsule.unregister()
+
+    # Add a manifest to the Satellite
+    with Manifester(manifest_category=settings.manifest.golden_ticket) as manifest:
+        satellite.upload_manifest(org.id, manifest.content)
+
+    # Enable RHEL 8 BaseOS and AppStream repos and sync
+    for rh_repo_key in ['rhel8_bos', 'rhel8_aps']:
+        satellite.api_factory.enable_rhrepo_and_fetchid(
+            basearch=DEFAULT_ARCHITECTURE,
+            org_id=org.id,
+            product=PRDS['rhel8'],
+            repo=REPOS[rh_repo_key]['name'],
+            reposet=REPOSET[rh_repo_key],
+            releasever=REPOS[rh_repo_key]['releasever'],
+        )
+    product = satellite.api.Product(name=PRDS['rhel8'], organization=org.id).search()[0]
+    product.sync(timeout=1800, synchronous=True)
+
     if not registration_args:
         registration_args = {}
     file, _, cmd_args = satellite.capsule_certs_generate(capsule)
@@ -116,9 +139,9 @@ def setup_capsule(satellite, capsule, registration_args=None, installation_args=
         f'sshpass -p "{capsule.password}" scp -o "StrictHostKeyChecking no" '
         f'{file} root@{capsule.hostname}:{file}'
     )
-    capsule.install_katello_ca(sat_hostname=satellite.hostname)
+    capsule.install_katello_ca(satellite)
     capsule.register_contenthost(**registration_args)
-    return capsule.install(**cmd_args)
+    return capsule.install(cmd_args)
 
 
 class ContentHostError(Exception):
@@ -165,18 +188,35 @@ class ContentHost(Host, ContentHostMixins):
     @property
     def nailgun_host(self):
         """If this host is subscribed, provide access to its nailgun object"""
-        if self.subscribed:
+        if self.identity.get('registered_to') == self.satellite.hostname:
             try:
                 host_list = self.satellite.api.Host().search(query={'search': self.hostname})[0]
             except Exception as err:
                 logger.error(f'Failed to get nailgun host for {self.hostname}: {err}')
                 host_list = None
             return host_list
+        else:
+            logger.warning(f'Host {self.hostname} not registered to {self.satellite.hostname}')
 
     @property
     def subscribed(self):
         """Boolean representation of a content host's subscription status"""
         return 'Status: Unknown' not in self.execute('subscription-manager status').stdout
+
+    @property
+    def identity(self):
+        """A Dictionary containing RHSM identity attributes of the host"""
+        id_output = self.execute('subscription-manager identity').stdout
+        id_dict = {}
+        if id_output:
+            id_dict = {
+                i.split(':')[0].replace(' ', '_'): i.split(': ')[1]
+                for i in id_output.split('\n')[:-1]
+            }
+            regged_to = self.subscription_config['server']['hostname']
+            if regged_to:
+                id_dict['registered_to'] = regged_to
+        return id_dict
 
     @property
     def ip_addr(self):
@@ -220,12 +260,17 @@ class ContentHost(Host, ContentHostMixins):
             self.remove_katello_ca()
 
     def teardown(self):
-        if not self.blank:
+        if not self.blank and not getattr(self, '_skip_context_checkin', False):
             if self.nailgun_host:
                 self.nailgun_host.delete()
             self.unregister()
         # Strip most unnecessary attributes from our instance for checkin
-        keep_keys = set(self.to_dict()) | {'release', '_prov_inst', '_cont_inst'}
+        keep_keys = set(self.to_dict()) | {
+            'release',
+            '_prov_inst',
+            '_cont_inst',
+            '_skip_context_checkin',
+        }
         self.__dict__ = {k: v for k, v in self.__dict__.items() if k in keep_keys}
         self.__class__ = Host
 
@@ -1428,6 +1473,22 @@ class Capsule(ContentHost, CapsuleMixins):
         if result.status != 0:
             raise SatelliteHostError(f'Failed to enable pull provider: {result.stdout}')
 
+    def set_mqtt_resend_interval(self, value):
+        """Set the time interval in seconds at which the notification should be
+        re-sent to the mqtt host until the job is picked up or cancelled"""
+        installer_opts = {
+            'foreman-proxy-plugin-remote-execution-script-mqtt-resend-interval': value,
+        }
+        enable_mqtt_command = InstallerCommand(
+            installer_opts=installer_opts,
+        )
+        result = self.execute(
+            enable_mqtt_command.get_command(),
+            timeout='20m',
+        )
+        if result.status != 0:
+            raise SatelliteHostError(f'Failed to change the mqtt resend interval: {result.stdout}')
+
     @property
     def cli(self):
         """Import only satellite-maintain robottelo cli entities and wrap them under self.cli"""
@@ -1457,6 +1518,7 @@ class Capsule(ContentHost, CapsuleMixins):
 class Satellite(Capsule, SatelliteMixins):
     def __init__(self, hostname=None, **kwargs):
         hostname = hostname or settings.server.hostname  # instance attr set by broker.Host
+        self.omitting_credentials = False
         self.port = kwargs.get('port', settings.server.port)
         super().__init__(hostname=hostname, **kwargs)
         # create dummy classes for later population
@@ -1516,12 +1578,25 @@ class Satellite(Capsule, SatelliteMixins):
                     try:
                         if Base in obj.mro():
                             # create a copy of the class and set our hostname as a class attribute
-                            new_cls = type(name, (obj,), {'hostname': self.hostname})
+                            new_cls = type(
+                                name,
+                                (obj,),
+                                {
+                                    'hostname': self.hostname,
+                                    'omitting_credentials': self.omitting_credentials,
+                                },
+                            )
                             setattr(self._cli, name, new_cls)
                     except AttributeError:
                         # not everything has an mro method, we don't care about them
                         pass
         return self._cli
+
+    @contextmanager
+    def omit_credentials(self):
+        self.omitting_credentials = True
+        yield
+        self.omitting_credentials = False
 
     def ui_session(self, testname=None, user=None, password=None, url=None, login=True):
         """Initialize an airgun Session object and store it as self.ui_session"""
@@ -1698,9 +1773,9 @@ class Satellite(Capsule, SatelliteMixins):
         """
         old = 'yum -t -y update'
         new = 'echo "Yum update skipped for faster automation testing"'
-        update_provisioning_template(name=template, old=old, new=new)
+        self.satellite.api_factory.update_provisioning_template(name=template, old=old, new=new)
         yield
-        update_provisioning_template(name=template, old=new, new=old)
+        self.satellite.api_factory.update_provisioning_template(name=template, old=new, new=old)
 
     def update_setting(self, name, value):
         """changes setting value and returns the setting value before the change."""
@@ -1767,10 +1842,12 @@ class Satellite(Capsule, SatelliteMixins):
             f'Failed to register the host: {rhel_contenthost.hostname}:'
             f'rc: {register.status}: {register.stderr}'
         )
+        rhsm_id = rhel_contenthost.execute('subscription-manager identity')
+        assert module_org.name in rhsm_id.stdout, 'Host is not registered to expected organization'
+        rhel_contenthost._satellite = self
 
-        # attach product subscriptions to contenthost
-        # Attach subscriptions only if SCA mode is disabled
-        if self.api.Organization(id=module_org.id).read().simple_content_access is False:
+        # Attach product subscriptions to contenthost, only if SCA mode is disabled
+        if self.is_sca_mode_enabled(module_org.id) is False:
             subs = self.api.Subscription(organization=module_org, name=prod.name).search()
             assert len(subs), f'Subscription for sat client product: {prod.name} was not found.'
             subscription = subs[0]
