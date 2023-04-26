@@ -21,3 +21,6 @@ updates:
     labels:
       - "CherryPick"
       - "dependencies"
+      - "6.13.z"
+      - "6.12.z"
+      - "6.11.z"

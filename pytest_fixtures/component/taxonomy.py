@@ -21,6 +21,20 @@ def default_location(session_target_sat):
 
 
 @pytest.fixture
+def current_sat_org(target_sat):
+    """Return the current organization assigned to the Satellite host"""
+    sat_host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
+    return sat_host.organization.read().name
+
+
+@pytest.fixture
+def current_sat_location(target_sat):
+    """Return the current location assigned to the Satellite host"""
+    sat_host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
+    return sat_host.location.read().name
+
+
+@pytest.fixture
 def function_org(target_sat):
     return target_sat.api.Organization().create()
 
@@ -188,6 +202,15 @@ def module_sca_manifest():
 def function_entitlement_manifest():
     """Yields a manifest in entitlement mode with subscriptions determined by the
     `manifest_category.entitlement` setting in conf/manifest.yaml."""
+    with Manifester(manifest_category=settings.manifest.entitlement) as manifest:
+        yield manifest
+
+
+@pytest.fixture(scope='function')
+def function_secondary_entitlement_manifest():
+    """Yields a manifest in entitlement mode with subscriptions determined by the
+    `manifest_category.entitlement` setting in conf/manifest.yaml.
+    A different one than is used in `function_entitlement_manifest_org`."""
     with Manifester(manifest_category=settings.manifest.entitlement) as manifest:
         yield manifest
 

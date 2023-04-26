@@ -34,7 +34,6 @@ from robottelo.config import settings
 from robottelo.constants import ANY_CONTEXT
 from robottelo.constants import DEFAULT_CV
 from robottelo.constants import DEFAULT_LOC
-from robottelo.constants import DEFAULT_ORG
 from robottelo.constants import DEFAULT_SUBSCRIPTION_NAME
 from robottelo.constants import ENVIRONMENT
 from robottelo.constants import FAKE_1_CUSTOM_PACKAGE
@@ -275,6 +274,7 @@ def tracer_install_host(rex_contenthost, target_sat):
     yield rex_contenthost
 
 
+@pytest.mark.e2e
 @pytest.mark.tier2
 def test_positive_end_to_end(session, module_global_params, target_sat, host_ui_options):
     """Create a new Host with parameters, config group. Check host presence on
@@ -1218,6 +1218,7 @@ def test_positive_global_registration_form(
         assert pair in cmd
 
 
+@pytest.mark.e2e
 @pytest.mark.no_containers
 @pytest.mark.tier3
 @pytest.mark.rhel_ver_match('[^6]')
@@ -1944,7 +1945,7 @@ def test_rex_new_ui(session, target_sat, rex_contenthost):
 
 
 @pytest.mark.tier4
-def test_positive_manage_table_columns(session):
+def test_positive_manage_table_columns(session, current_sat_org, current_sat_location):
     """Set custom columns of the hosts table.
 
     :id: e5e18982-cc43-11ed-8562-000c2989e153
@@ -1975,8 +1976,8 @@ def test_positive_manage_table_columns(session):
         'Recommendations': False,
     }
     with session:
-        session.organization.select(org_name=DEFAULT_ORG)
-        session.location.select(loc_name=DEFAULT_LOC)
+        session.organization.select(org_name=current_sat_org)
+        session.location.select(loc_name=current_sat_location)
         session.host.manage_table_columns(columns)
         displayed_columns = session.host.get_displayed_table_headers()
         for column, is_displayed in columns.items():
@@ -1984,7 +1985,9 @@ def test_positive_manage_table_columns(session):
 
 
 @pytest.mark.tier4
-def test_positive_host_details_read_templates(session, target_sat):
+def test_positive_host_details_read_templates(
+    session, target_sat, current_sat_org, current_sat_location
+):
     """Check if all assigned host provisioning templates are correctly reported
     in host detail / Details tab / Provisioning templates card.
 
@@ -2003,8 +2006,8 @@ def test_positive_host_details_read_templates(session, target_sat):
     host = target_sat.api.Host().search(query={'search': f'name={target_sat.hostname}'})[0]
     api_templates = [template['name'] for template in host.list_provisioning_templates()]
     with session:
-        session.organization.select(org_name=DEFAULT_ORG)
-        session.location.select(loc_name=DEFAULT_LOC)
+        session.organization.select(org_name=current_sat_org)
+        session.location.select(loc_name=current_sat_location)
         host_detail = session.host_new.get_details(target_sat.hostname, widget_names='details')
         ui_templates = [
             row['column1'].strip()
@@ -2216,6 +2219,7 @@ def test_positive_apply_erratum(
         assert result.status == 1
 
 
+@pytest.mark.e2e
 @pytest.mark.tier4
 @pytest.mark.rhel_ver_match('8')
 @pytest.mark.no_containers
