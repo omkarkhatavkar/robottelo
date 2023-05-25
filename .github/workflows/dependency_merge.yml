@@ -46,7 +46,7 @@ jobs:
         uses: omkarkhatavkar/wait-for-status-checks@main
         with:
           ref: ${{ github.head_ref }}
-          context: 'Robottelo Runner'
+          context: 'Robottelo-Runner'
           wait-interval: 60
           count: 10
 
