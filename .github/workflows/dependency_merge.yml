@@ -1,8 +1,11 @@
 name: Dependabot Auto Merge
-on: pull_request
-
-permissions:
-  pull-requests: write
+on:
+  pull_request_target:
+    types:
+      - labeled
+      - unlabeled
+      - edited
+      - ready_for_review
 
 jobs:
   dependabot:
