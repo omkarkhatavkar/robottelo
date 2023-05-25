@@ -12,9 +12,11 @@ from pathlib import Path
 from pathlib import PurePath
 from tempfile import NamedTemporaryFile
 from urllib.parse import urljoin
+from urllib.parse import urlparse
 from urllib.parse import urlunsplit
 
 import requests
+import yaml
 from box import Box
 from broker import Broker
 from broker.hosts import Host
@@ -153,6 +155,10 @@ class CapsuleHostError(Exception):
 
 
 class SatelliteHostError(Exception):
+    pass
+
+
+class IPAHostError(Exception):
     pass
 
 
@@ -371,7 +377,7 @@ class ContentHost(Host, ContentHostMixins):
             downstream_repo = settings.repos.sattools_repo['rhel7']
         elif repo == constants.REPOS['rhst8']['id']:
             downstream_repo = settings.repos.sattools_repo['rhel8']
-        elif repo in (constants.REPOS['rhsc6']['id'], constants.REPOS['rhsc7']['id']):
+        elif repo in (constants.REPOS['rhsc7']['id'], constants.REPOS['rhsc8']['id']):
             downstream_repo = settings.repos.capsule_repo
         if force or settings.robottelo.cdn or not downstream_repo:
             return self.execute(f'subscription-manager repos --enable {repo}')
@@ -562,8 +568,7 @@ class ContentHost(Host, ContentHostMixins):
         org,
         loc,
         activation_keys,
-        satellite=None,
-        target=None,
+        target,
         setup_insights=False,
         setup_remote_execution=True,
         setup_remote_execution_pull=False,
@@ -582,8 +587,7 @@ class ContentHost(Host, ContentHostMixins):
         """Registers content host to the Satellite or Capsule server
         using a global registration template.
 
-        :param target: Satellite or Capusle hostname to register to, required.
-        :param satellite: Satellite object, used for running hammer CLI when target is smart_proxy.
+        :param target: Satellite or Capusle object to register to, required.
         :param org: Organization to register content host for, required.
         :param loc: Location to register content host for, required.
         :param activation_keys: Activation key name to register content host with, required.
@@ -640,7 +644,7 @@ class ContentHost(Host, ContentHostMixins):
         if force:
             options['force'] = str(force).lower()
 
-        cmd = satellite.cli.HostRegistration.generate_command(options)
+        cmd = target.satellite.cli.HostRegistration.generate_command(options)
         return self.execute(cmd.strip('\n'))
 
     def register_contenthost(
@@ -1351,6 +1355,36 @@ class Capsule(ContentHost, CapsuleMixins):
     def nailgun_smart_proxy(self):
         return self.satellite.api.SmartProxy().search(query={'search': f'name={self.hostname}'})[0]
 
+    @property
+    def satellite(self):
+        if not self._satellite:
+            try:
+                # get the Capsule answer file
+                data = self.session.sftp_read(constants.CAPSULE_ANSWER_FILE, return_data=True)
+                answers = Box(yaml.load(data, yaml.FullLoader))
+                sat_hostname = urlparse(answers.foreman_proxy.foreman_base_url).netloc
+                # get the Satellite hostname from the answer file
+                hosts = Broker(host_class=Satellite).from_inventory(
+                    filter=f'@inv.hostname == "{sat_hostname}"'
+                )
+                if hosts:
+                    self._satellite = hosts[0]
+                else:
+                    logger.debug(
+                        f'No Satellite host found in inventory for {self.hostname}. '
+                        'Satellite object with the same hostname will be created anyway.'
+                    )
+                    self._satellite = Satellite(hostname=sat_hostname)
+            except Exception as e:
+                logger.exception(e)
+                # assign the default Sat instance in case we are not able to get it
+                logger.warning(
+                    'Unable to get Satellite hostname from Capsule answer file '
+                    'Capsule gets the default Satellite instance assigned.'
+                )
+                self._satellite = Satellite()
+        return self._satellite
+
     @cached_property
     def is_upstream(self):
         """Figure out which product distribution is installed on the server.
@@ -1363,7 +1397,8 @@ class Capsule(ContentHost, CapsuleMixins):
     @cached_property
     def version(self):
         if not self.is_upstream:
-            return self.execute('rpm -q satellite-capsule').stdout.split('-')[2]
+            version = self.execute('rpm -q satellite-capsule').stdout
+            return 'stream' if 'stream' in version else version.split('-')[2]
         else:
             return 'upstream'
 
@@ -1638,16 +1673,14 @@ class Satellite(Capsule, SatelliteMixins):
     @cached_property
     def version(self):
         if not self.is_upstream:
-            return self.execute('rpm -q satellite').stdout.split('-')[1]
+            version = self.execute('rpm -q satellite').stdout
+            return 'stream' if 'stream' in version else version.split('-')[1]
         else:
             return 'upstream'
 
     def is_remote_db(self):
         return (
-            self.execute(
-                'grep "db_manage: false" /etc/foreman-installer/scenarios.d/satellite-answers.yaml'
-            ).status
-            == 0
+            self.execute(f'grep "db_manage: false" {constants.SATELLITE_ANSWER_FILE}').status == 0
         )
 
     def capsule_certs_generate(self, capsule, cert_path=None, **extra_kwargs):
@@ -1862,6 +1895,118 @@ class Satellite(Capsule, SatelliteMixins):
             # refresh repository metadata on the host
             rhel_contenthost.execute('subscription-manager repos --list')
 
+    def enroll_ad_and_configure_external_auth(self, ad_data):
+        """Enroll Satellite Server to an AD Server.
+
+        :param ad_data: Callable method that returns AD server details
+        :type ad_data: Callable
+        """
+        ad_data = ad_data()
+        packages = (
+            'sssd adcli realmd ipa-python-compat krb5-workstation '
+            'samba-common-tools gssproxy nfs-utils ipa-client'
+        )
+        realm = ad_data.realm
+        workgroup = ad_data.workgroup
+
+        default_content = f'[global]\nserver = unused\nrealm = {realm}'
+        keytab_content = (
+            f'[global]\nworkgroup = {workgroup}\nrealm = {realm}'
+            f'\nkerberos method = system keytab\nsecurity = ads'
+        )
+
+        # install the required packages
+        assert (
+            self.execute(f'yum -y --disableplugin=foreman-protector install {packages}').status == 0
+        )
+
+        # update the AD name server
+        assert self.execute('chattr -i /etc/resolv.conf').status == 0
+        line_number = int(
+            self.execute(
+                "awk -v search='nameserver' '$0~search{print NR; exit}' /etc/resolv.conf"
+            ).stdout
+        )
+        assert (
+            self.execute(
+                f'sed -i "{line_number}i nameserver {ad_data.nameserver}" /etc/resolv.conf'
+            ).status
+            == 0
+        )
+        assert self.execute('chattr +i /etc/resolv.conf').status == 0
+
+        # join the realm
+        assert (
+            self.execute(
+                f'echo {settings.ldap.password} | realm join -v {realm} --membership-software=samba'
+            ).status
+            == 0
+        )
+        assert self.execute('touch /etc/ipa/default.conf').status == 0
+        assert self.execute(f'echo "{default_content}" > /etc/ipa/default.conf').status == 0
+        assert self.execute(f'echo "{keytab_content}" > /etc/net-keytab.conf').status == 0
+
+        # gather the apache id
+        id_apache = str(self.execute('id -u apache')).strip()
+        http_conf_content = (
+            f'[service/HTTP]\nmechs = krb5\ncred_store = keytab:/etc/krb5.keytab'
+            f'\ncred_store = ccache:/var/lib/gssproxy/clients/krb5cc_%U'
+            f'\neuid = {id_apache}'
+        )
+
+        # register the satellite as client for external auth
+        assert self.execute(f'echo "{http_conf_content}" > /etc/gssproxy/00-http.conf').status == 0
+        token_command = (
+            'KRB5_KTNAME=FILE:/etc/httpd/conf/http.keytab net ads keytab add HTTP '
+            '-U administrator -d3 -s /etc/net-keytab.conf'
+        )
+        assert self.execute(f'echo {settings.ldap.password} | {token_command}').status == 0
+        assert self.execute('chown root.apache /etc/httpd/conf/http.keytab').status == 0
+        assert self.execute('chmod 640 /etc/httpd/conf/http.keytab').status == 0
+
+        # enable the foreman-ipa-authentication feature
+        result = self.install(InstallerCommand('foreman-ipa-authentication true'))
+        assert result.status == 0
+
+        # add foreman ad_gp_map_service (BZ#2117523)
+        line_number = int(
+            self.execute(
+                "awk -v search='domain/' '$0~search{print NR; exit}' /etc/sssd/sssd.conf"
+            ).stdout
+        )
+        assert (
+            self.execute(
+                f'sed -i "{line_number + 1}i ad_gpo_map_service = +foreman" /etc/sssd/sssd.conf'
+            ).status
+            == 0
+        )
+        assert self.execute('systemctl restart sssd.service').status == 0
+
+        # unset GssapiLocalName (BZ#1787630)
+        assert (
+            self.execute(
+                'sed -i -e "s/GssapiLocalName.*On/GssapiLocalName Off/g" '
+                '/etc/httpd/conf.d/05-foreman-ssl.d/auth_gssapi.conf'
+            ).status
+            == 0
+        )
+        assert self.execute('systemctl restart gssproxy.service').status == 0
+        assert self.execute('systemctl enable gssproxy.service').status == 0
+
+        # restart the deamon and httpd services
+        httpd_service_content = (
+            '.include /lib/systemd/system/httpd.service\n[Service]' '\nEnvironment=GSS_USE_PROXY=1'
+        )
+        assert (
+            self.execute(
+                f'echo "{httpd_service_content}" > /etc/systemd/system/httpd.service'
+            ).status
+            == 0
+        )
+        assert (
+            self.execute('systemctl daemon-reload && systemctl restart httpd.service').status == 0
+        )
+
 
 class SSOHost(Host):
     """Class for RHSSO functions and setup"""
@@ -2027,3 +2172,101 @@ class SSOHost(Host):
             ]
         }
         self.update_client_configuration(client_config)
+
+
+class IPAHost(Host):
+    def __init__(self, sat_obj, **kwargs):
+        self.satellite = sat_obj
+        kwargs['hostname'] = kwargs.get('hostname', settings.ipa.hostname)
+        # Allow the class to be constructed from kwargs
+        kwargs['from_dict'] = True
+        kwargs.update(
+            {
+                'base_dn': settings.ipa.basedn,
+                'disabled_user_ipa': settings.ipa.disabled_ipa_user,
+                'group_base_dn': settings.ipa.grpbasedn,
+                'group_users': settings.ipa.group_users,
+                'groups': settings.ipa.groups,
+                'ipa_otp_username': settings.ipa.otp_user,
+                'ldap_user_cn': settings.ipa.username,
+                'ldap_user_name': settings.ipa.user,
+                'ldap_user_passwd': settings.ipa.password,
+                'time_based_secret': settings.ipa.time_based_secret,
+            }
+        )
+        super().__init__(**kwargs)
+
+    def disenroll_idm(self):
+        self.execute(f'ipa service-del HTTP/{self.satellite.hostname}')
+        self.execute(f'ipa host-del {self.satellite.hostname}')
+
+    def enroll_idm_and_configure_external_auth(self):
+        """Enroll the Satellite Server to an IDM Server."""
+        result = self.satellite.execute(
+            'yum -y --disableplugin=foreman-protector install ipa-client ipa-admintools'
+        )
+        if result.status != 0:
+            raise SatelliteHostError('Failed to install ipa client')
+        self._kinit_admin()
+        result = self.execute(f'ipa host-find {self.satellite.hostname}')
+        if result.status == 0:
+            self.disenroll_idm()
+        result = self.execute(f'ipa host-add --random {self.satellite.hostname}')
+        for line in result.stdout.splitlines():
+            if 'Random password' in line:
+                _, password = line.split(': ', 2)
+                break
+        self.execute(f'ipa service-add HTTP/{self.satellite.hostname}')
+        _, domain = self.hostname.split('.', 1)
+        result = self.satellite.execute(
+            f"ipa-client-install --password '{password}' "
+            f'--domain {domain} '
+            f'--server {self.hostname} '
+            f'--realm {domain.upper()} -U'
+        )
+        if result.status not in [0, 3]:
+            raise SatelliteHostError('Failed to enable ipa client')
+        result = self.satellite.install(InstallerCommand('foreman-ipa-authentication true'))
+        assert result.status == 0, 'Installer failed to enable IPA authentication.'
+        self.satellite.cli.Service.restart()
+
+    def _kinit_admin(self):
+        result = self.execute(f'echo {self.ldap_user_passwd} | kinit admin')
+        if result.status != 0:
+            raise IPAHostError('Failed to login to the IPA server with admin credentials')
+
+    def create_user(self, username):
+        self._kinit_admin()
+        add_user_cmd = (
+            f'echo {self.ldap_user_passwd} | ipa user-add {username} --first'
+            f'={username} --last={username} --password'
+        )
+        result = self.execute(add_user_cmd)
+        if result.status != 0:
+            raise IPAHostError('Failed to create the user')
+
+    def delete_user(self, username):
+        result = self.execute(f'ipa user-del {username}')
+        if result.status != 0:
+            raise IPAHostError('Failed to delete the user')
+
+    def find_user(self, username):
+        self._kinit_admin()
+        result = self.execute(f"ipa user-find --login {username}")
+        if result.status != 0:
+            raise IPAHostError('Failed to find the user')
+        return result.stdout
+
+    def add_user_to_usergroup(self, member_username, member_group):
+        self._kinit_admin()
+        result = self.execute(f'ipa group-add-member {member_group} --users={member_username}')
+        if result.status != 0:
+            raise IPAHostError('Failed to add the user to usergroup')
+
+    def remove_user_from_usergroup(self, member_username, member_group):
+        self._kinit_admin()
+        result = self.execute(
+            f'ipa group-remove-member {member_group} --users={member_username}',
+        )
+        if result.status != 0:
+            raise IPAHostError('Failed to remove the user from user group')

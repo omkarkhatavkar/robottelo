@@ -239,6 +239,7 @@ PRODUCT_KEY_SAT_CLIENT = 'rhsclient'
 PRODUCT_KEY_VIRT_AGENTS = 'rhva6'
 PRODUCT_KEY_CLOUD_FORMS_TOOLS = 'rhct6'
 PRODUCT_KEY_ANSIBLE_ENGINE = 'rhae2'
+PRODUCT_KEY_RHEL_EXTRAS = 'rhel7_extra'
 
 HASH_TYPE = {'sha256': "SHA256", 'sha512': "SHA512", 'base64': "Base64", 'md5': "MD5"}
 
@@ -282,9 +283,10 @@ REPOSET = {
     'rhel7': 'Red Hat Enterprise Linux 7 Server (RPMs)',
     'rhva6': ('Red Hat Enterprise Virtualization Agents for RHEL 6 Server (RPMs)'),
     'rhs7': 'Red Hat Satellite 6.11 (for RHEL 7 Server) (RPMs)',
-    'rhsc7': 'Red Hat Satellite Capsule 6.9 (for RHEL 7 Server) (RPMs)',
+    'rhs8': 'Red Hat Satellite 6.13 for RHEL 8 x86_64 (RPMs)',
+    'rhsc7': 'Red Hat Satellite Capsule 6.11 (for RHEL 7 Server) (RPMs)',
+    'rhsc8': 'Red Hat Satellite Capsule 6.13 for RHEL 8 x86_64 (RPMs)',
     'rhsc7_iso': 'Red Hat Satellite Capsule 6.4 (for RHEL 7 Server) (ISOs)',
-    'rhsc6': 'Red Hat Satellite Capsule 6.9 (for RHEL 6 Server) (RPMs)',
     'rhsclient7': 'Red Hat Satellite Client 6 for RHEL 7 Server RPMs x86_64',
     'rhsclient8': 'Red Hat Satellite Client 6 for RHEL 8 x86_64 RPMs',
     'rhsclient9': 'Red Hat Satellite Client 6 for RHEL 9 x86_64 RPMs',
@@ -351,6 +353,15 @@ REPOS = {
         'key': 'rhel',
         'version': '6.8',
     },
+    'rhs8': {
+        'id': 'satellite-6.13-for-rhel-8-x86_64-rpms',
+        'name': ('Red Hat Satellite 6.13 for RHEL 8 x86_64 RPMs'),
+        'version': '6.13',
+        'reposet': REPOSET['rhs8'],
+        'product': PRDS['rhs'],
+        'distro': 'rhel8',
+        'key': 'rhs',
+    },
     'rhs7': {
         'id': 'rhel-7-server-satellite-6.11-rpms',
         'name': ('Red Hat Satellite 6.11 for RHEL 7 Server RPMs x86_64'),
@@ -360,10 +371,19 @@ REPOS = {
         'distro': 'rhel7',
         'key': 'rhs',
     },
+    'rhsc8': {
+        'id': 'satellite-capsule-6.13-for-rhel-8-x86_64-rpms',
+        'name': ('Red Hat Satellite Capsule 6.13 for RHEL 8 x86_64 RPMs'),
+        'version': '6.13',
+        'reposet': REPOSET['rhsc8'],
+        'product': PRDS['rhsc'],
+        'distro': 'rhel8',
+        'key': 'rhsc',
+    },
     'rhsc7': {
-        'id': 'rhel-7-server-satellite-capsule-6.9-rpms',
-        'name': ('Red Hat Satellite Capsule 6.9 for RHEL 7 Server RPMs x86_64'),
-        'version': '6.9',
+        'id': 'rhel-7-server-satellite-capsule-6.11-rpms',
+        'name': ('Red Hat Satellite Capsule 6.11 for RHEL 7 Server RPMs x86_64'),
+        'version': '6.11',
         'reposet': REPOSET['rhsc7'],
         'product': PRDS['rhsc'],
         'distro': 'rhel7',
@@ -372,15 +392,6 @@ REPOS = {
     'rhsc7_iso': {
         'id': 'rhel-7-server-satellite-capsule-6.4-isos',
         'name': ('Red Hat Satellite Capsule 6.4 for RHEL 7 Server ISOs x86_64'),
-    },
-    'rhsc6': {
-        'id': 'rhel-6-server-satellite-capsule-6.9-rpms',
-        'name': ('Red Hat Satellite Capsule 6.9 for RHEL 6 Server RPMs x86_64'),
-        'version': '6.8',
-        'reposet': REPOSET['rhsc6'],
-        'product': PRDS['rhsc'],
-        'distro': 'rhel6',
-        'key': 'rhsc',
     },
     'rhsclient7': {
         'id': 'rhel-7-server-satellite-client-6-rpms',
@@ -518,32 +529,32 @@ REPOS = {
         },
         'rhel8_bos': {
             'id': 'rhel-8-for-x86_64-baseos-kickstart',
-            'name': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS Kickstart 8.7',
-            'version': '8.7',
+            'name': 'Red Hat Enterprise Linux 8 for x86_64 - BaseOS Kickstart 8.8',
+            'version': '8.8',
             'reposet': REPOSET['kickstart']['rhel8'],
             'product': PRDS['rhel8'],
             'distro': 'rhel8',
         },
         'rhel8_aps': {
             'id': 'rhel-8-for-x86_64-appstream-kickstart',
-            'name': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream Kickstart 8.7',
-            'version': '8.7',
+            'name': 'Red Hat Enterprise Linux 8 for x86_64 - AppStream Kickstart 8.8',
+            'version': '8.8',
             'reposet': REPOSET['kickstart']['rhel8_aps'],
             'product': PRDS['rhel8'],
             'distro': 'rhel8',
         },
         'rhel9_bos': {
             'id': 'rhel-9-for-x86_64-baseos-kickstart',
-            'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS Kickstart 9.1',
-            'version': '9.1',
+            'name': 'Red Hat Enterprise Linux 9 for x86_64 - BaseOS Kickstart 9.2',
+            'version': '9.2',
             'reposet': REPOSET['kickstart']['rhel9'],
             'product': PRDS['rhel9'],
             'distro': 'rhel9',
         },
         'rhel9_aps': {
             'id': 'rhel-9-for-x86_64-appstream-kickstart',
-            'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream Kickstart 9.1',
-            'version': '9.1',
+            'name': 'Red Hat Enterprise Linux 9 for x86_64 - AppStream Kickstart 9.2',
+            'version': '9.2',
             'reposet': REPOSET['kickstart']['rhel9_aps'],
             'product': PRDS['rhel9'],
             'distro': 'rhel9',
@@ -1726,6 +1737,7 @@ HAMMER_CONFIG = "~/.hammer/cli.modules.d/foreman.yml"
 HAMMER_SESSIONS = "~/.hammer/sessions"
 
 SATELLITE_ANSWER_FILE = "/etc/foreman-installer/scenarios.d/satellite-answers.yaml"
+CAPSULE_ANSWER_FILE = "/etc/foreman-installer/scenarios.d/capsule-answers.yaml"
 MAINTAIN_HAMMER_YML = "/etc/foreman-maintain/foreman-maintain-hammer.yml"
 SATELLITE_MAINTAIN_YML = "/etc/foreman-maintain/foreman_maintain.yml"
 

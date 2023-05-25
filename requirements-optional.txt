@@ -1,11 +1,11 @@
 # For running tests and checking code quality using these modules.
 flake8==6.0.0
 pytest-cov==3.0.0
-redis==4.5.4
-pre-commit==3.2.2
+redis==4.5.5
+pre-commit==3.3.2
 
 # For generating documentation.
-sphinx==6.2.1
+sphinx==7.0.1
 sphinx-autoapi==2.1.0
 
 # For 'manage' interactive shell
