@@ -32,7 +32,7 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            trigger: test-robottelo
+            trigger: "test-robottelo" 
             pytest: ${{ steps.yaml.outputs.result }}
 
       - name: Wait for PRT checks to get initiated
