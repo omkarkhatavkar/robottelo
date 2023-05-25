@@ -32,7 +32,7 @@ jobs:
         with:
           message: |
             trigger: test-robottelo
-            pytest:  ${{ steps.yaml.outputs.result }}
+            pytest: ${{ steps.yaml.outputs.result }}
 
       - name: Wait for PRT checks to get initiated
         if: steps.yaml.outputs.result != 'null'
