@@ -27,6 +27,7 @@ jobs:
         if:  steps.yaml.outputs.result != 'null'
         uses: mshick/add-pr-comment@v2
         with:
+          issue: ${{ github.event.number }}
           message: |
             trigger: test-robottelo
             pytest:  ${{ steps.yaml.outputs.result }}
