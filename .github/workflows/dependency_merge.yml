@@ -1,6 +1,8 @@
 name: Dependabot Auto Merge
-on: pull_request_target
+on: pull_request
 
+permissions:
+  pull-requests: write
 
 jobs:
   dependabot:
@@ -31,7 +33,6 @@ jobs:
           message: |
             trigger: test-robottelo
             pytest:  ${{ steps.yaml.outputs.result }}
-          repo-token: ${{ secrets.CHERRYPICK_PAT }}
 
       - name: Wait for PRT checks to get initiated
         if: steps.yaml.outputs.result != 'null'
