@@ -47,8 +47,8 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           context: 'Robottelo Runner'
-          wait-interval: 600
-          count: 10
+          wait-interval: 60
+          count: 100
 
       - name: Wait for other status checks to Pass
         id: waitforstatuschecks
