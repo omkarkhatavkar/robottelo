@@ -6,6 +6,7 @@ permissions:
 
 jobs:
   dependabot:
+    name: dependabot-auto-merge
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
@@ -34,12 +35,10 @@ jobs:
           body: |
             trigger: test-robottelo\r
             pytest: ${{ steps.yaml.outputs.result }}
-
       - name: Wait for PRT checks to get initiated
         if: steps.yaml.outputs.result != 'null'
         run: |
           echo "Waiting for ~ 10 mins, PRT to be initiated." && sleep 600
-
       - name: Fetch and Verify the PRT status
         if: steps.yaml.outputs.result != 'null'
         id: outcome
@@ -57,7 +56,7 @@ jobs:
           ref: ${{ github.head_ref }}
           repo-token: ${{ secrets.CHERRYPICK_PAT }}
           wait-interval: 60
-          running-workflow-name: 'Automerge auto-cherry-picked pr'
+          running-workflow-name: 'dependabot-auto-merge'
           allowed-conclusions: success,skipped
 
       - id: automerge
