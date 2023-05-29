@@ -52,7 +52,7 @@ jobs:
         uses: lewagon/wait-on-check-action@v1.3.1
         with:
           ref: ${{ github.head_ref }}
-          repo-token: ${{ secrets.CHERRYPICK_PAT }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           wait-interval: 60
           running-workflow-name: 'Automerge auto-cherry-picked pr'
           allowed-conclusions: success,skipped
