@@ -10,7 +10,6 @@ jobs:
     name: dependabot-auto-merge
     runs-on: ubuntu-latest
     if: |
-      (github.event.pull_request.user.login == 'dependabot[bot]' || 
       github.event.pull_request.user.login == 'omkarkhatavkar') &&
       contains( github.event.pull_request.labels.*.name, 'dependencies')
     steps:
