@@ -1,10 +1,21 @@
 name: Dependabot Auto Merge
 
-on: pull_request_target
-permissions:
-  pull-requests: write
-  contents: write
-
+on:
+  pull_request_target:
+    types:
+      - labeled
+      - unlabeled
+      - edited
+      - ready_for_review
+    
+    branches-ignore:
+      - master
+  check_suite:
+    types:
+      - completed
+    branches-ignore:
+      - master
+      
 jobs:
   dependabot:
     name: dependabot-auto-merge
