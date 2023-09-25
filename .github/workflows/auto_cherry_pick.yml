@@ -101,7 +101,7 @@ jobs:
         if: ${{ always() && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
         run: |
           # Search the PR using gh command by description
-          PR_Description = '[${{ matrix.label }}] ${{ env.title }}'
+          PR_Description='[${{ matrix.label }}] ${{ env.title }}'
           PR=$(gh pr list -S $PR_Description)
 
           # Check if the PRs list contains the message "no pull requests match your search"
