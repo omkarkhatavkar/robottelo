@@ -73,7 +73,7 @@ jobs:
             No-CherryPick
             ${{ env.is_dependabot_pr }}
           assignees: ${{ env.assignee }}
-          
+
       - name: Add Parent PR's PRT comment to Auto_Cherry_Picked PR's
         id: add-parent-prt-comment
         if: ${{ always() && steps.cherrypick.outcome == 'success' }}
@@ -99,27 +99,10 @@ jobs:
               labels: ["AutoMerge_Cherry_Picked"]
             })
 
-      - name: Search PRs by Description
-        id: pr-search
-        if: ${{ always() && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
-        run: |
-          # Search the PR using gh command by description
-          PR_Description='[${{ matrix.label }}] ${{ env.title }}'
-          PR=$(gh pr list -S $PR_Description)
-
-          # Check if the PRs list contains the message "no pull requests match your search"
-          if echo "$PR" | grep -q "no pull requests match your search"; then
-            echo "No PRs found with 'pr description: $PR_Description'."
-            echo "::set-output name=no_pr_found::true"
-          else
-            echo "PR found with 'pr description: $PR_Description':"
-            echo "$PR"
-            echo "::set-output name=no_pr_found::false"
-
-      ## Failure Logging to issues
+      ## Failure Logging to issues and GChat Group
       - name: Create Github issue on cherrypick failure
         id: create-issue
-        if: ${{ always() && steps.pr-search.outputs.no_pr_found && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
+        if: ${{ always() && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
         uses: dacbd/create-issue-action@main
         with:
           token: ${{ secrets.CHERRYPICK_PAT }}
