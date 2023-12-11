@@ -81,7 +81,7 @@ jobs:
         with:
           message: |
             ${{ needs.find-the-parent-prt-comment.outputs.prt_comment }}
-          pr_number: ${{ needs.auto-cherry-pick.outputs.pr_number }}
+          pr_number: ${{ steps.cherrypick.outputs.number  }}
 
       - name: is autoMerging enabled for Auto CherryPicked PRs ?
         if: ${{ always() && steps.cherrypick.outcome == 'success' && contains(github.event.pull_request.labels.*.name, 'AutoMerge_Cherry_Picked') }}
