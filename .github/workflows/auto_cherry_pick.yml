@@ -80,7 +80,8 @@ jobs:
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
-            ${{ needs.find-the-parent-prt-comment.outputs.prt_comment }}        
+            ${{ needs.find-the-parent-prt-comment.outputs.prt_comment }}
+          pr_number: ${{ needs.auto-cherry-pick.outputs.pr_number }}
 
       - name: is autoMerging enabled for Auto CherryPicked PRs ?
         if: ${{ always() && steps.cherrypick.outcome == 'success' && contains(github.event.pull_request.labels.*.name, 'AutoMerge_Cherry_Picked') }}
