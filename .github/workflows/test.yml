@@ -1,3 +1,4 @@
+
 # CI stages to execute against Pull Requests
 name: Search GH PR's based on title
 
@@ -10,16 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Search for the pull request
-        id: outcome
+        id: search
         uses: omkarkhatavkar/search-github-prs@main
         with:
-          repo: 'satellite/robottelo'
+          repo: 'satelliteqe/robottelo'
           title: '[6.15.z] Sync project dependencies'
+          repo_token: '${{ secrets.CHERRYPICK_PAT }}'
       - name: Check the result
         run: |
-          if [ ${{ steps.outcome.outputs.result }} == 'success' ]; then
+          echo "Result: ${{ steps.search.outputs.result }}"
+          if [ ${{ steps.search.outputs.result }} == 'success' ]; then
             echo "The PR is found"
-            echo "${{ steps.outcome.outputs.details }}"
+            echo "${{ steps.search.outputs.details }}"
           else
             echo "Failed to find the PR"
           fi
