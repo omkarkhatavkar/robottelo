@@ -13,8 +13,9 @@ jobs:
         id: search
         uses: omkarkhatavkar/search-github-prs@main
         with:
-          repo: 'omkarkhatavkar/robottelo'
+          repo: 'satelliteqe/robottelo'
           title: 'Bump pascalgn/automerge-action from 0.15.6 to 0.16.2'
+          repo_token: '${{ secrets.CHERRYPICK_PAT }}'
       - name: Check the result
         run: |
           echo "Result: ${{ steps.search.outputs.result }}"
