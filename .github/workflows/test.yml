@@ -13,7 +13,7 @@ jobs:
         id: outcome
         uses: omkarkhatavkar/search-github-prs@main
         with:
-          repo: 'satellite/robottelo'
+          repo: 'satelliteqe/robottelo'
           title: '[6.15.z] Sync project dependencies'
       - name: Check the result
         run: |
