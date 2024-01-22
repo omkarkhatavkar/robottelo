@@ -15,8 +15,10 @@ jobs:
         id: find-pull-request
         with:
           branch: omkarkhatavkar-patch-8
+      - name: print things here 
+        run: echo "Pull Request title ${number} ${title} (${sha})"
       - name: check if pr is valid  
-        if: ${{ steps.find-pull-request.outputs.is_integer == 'true' }}
+        if: ${{ steps.find-pull-request.outputs.number != ''}}
         run: echo "Pull Request title ${number} ${title} (${sha})"
         env:
           number: ${{ steps.find-pull-request.outputs.number }}
