@@ -16,7 +16,7 @@ jobs:
         with:
           repo: 'satelliteqe/robottelo'
           title: '[6.15.z] Sync project dependencies'
-          repo_token: '${{ secrets.CHERRYPICK_PAT }}'
+          repo_token: ${{ secrets.CHERRYPICK_PAT }}
       - name: Check the result
         run: |
           echo "Result: ${{ steps.search.outputs.result }}"
