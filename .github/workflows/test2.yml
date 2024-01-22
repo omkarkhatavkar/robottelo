@@ -16,7 +16,7 @@ jobs:
         with:
           branch: omkarkhatavkar-patch-12
       - name: print things here 
-        run: echo "Pull Request title ${steps.find-pull-request.outputs.title} "
+        run: echo "Pull Request title ${{ steps.find-pull-request.outputs.title }} "
       - name: check if pr is valid  
         if: ${{ steps.find-pull-request.outputs.number != ''}}
         run: echo "Pull Request title ${number} ${title} (${sha})"
