@@ -1,0 +1,21 @@
+
+# CI stages to execute against Pull Requests
+name: Search GH PR's based on title
+
+on:
+  pull_request:
+    types: ["opened", "synchronize", "reopened"]
+
+jobs:
+  search_for_pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Pull Request
+        uses: juliangruber/find-pull-request-action@v1
+        id: find-pull-request
+        with:
+          branch: omkarkhatavkar-patch-8
+      - run: echo "Pull Request title ${number} ${title} (${sha})"
+        env:
+          number: ${{ steps.find-pull-request.outputs.number }}
+          sha: ${{ steps.find-pull-request.outputs.head-sha }}
