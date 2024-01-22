@@ -17,6 +17,7 @@ jobs:
           title: '[6.15.z] Sync project dependencies'
       - name: Check the result
         run: |
+          echo "Result: ${{ steps.outcome.outputs.result }}"
           if [ ${{ steps.outcome.outputs.result }} == 'success' ]; then
             echo "The PR is found"
             echo "${{ steps.outcome.outputs.details }}"
