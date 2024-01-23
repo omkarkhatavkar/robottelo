@@ -80,6 +80,8 @@ jobs:
         with:
           branch: "cherry-pick-${{ matrix.label }}-${{ github.sha }}"
           base: ${{ matrix.label }}
+
+      - run: echo "Pull Request ${{ steps.fpr.outputs.number }}"
           
       - name: Add Parent PR's PRT comment to Auto_Cherry_Picked PR's
         id: add-parent-prt-comment
