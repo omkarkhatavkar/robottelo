@@ -73,7 +73,13 @@ jobs:
             No-CherryPick
             ${{ env.is_dependabot_pr }}
           assignees: ${{ env.assignee }}
-
+      
+      - name: Check if cherrypick pr is created
+        uses: juliangruber/find-pull-request-action@v1
+        id: fpr
+        with:
+          branch: "cherry-pick-${{ matrix.label }}-${{ github.sha }}"
+          
       - name: Add Parent PR's PRT comment to Auto_Cherry_Picked PR's
         id: add-parent-prt-comment
         if: ${{ always() && steps.cherrypick.outcome == 'success' }}
@@ -96,12 +102,6 @@ jobs:
               repo: context.repo.repo,
               labels: ["AutoMerge_Cherry_Picked"]
             })
-
-      - name: Check if cherrypick pr is created
-        uses: juliangruber/find-pull-request-action@v1
-        id: fpr
-        with:
-          branch: "cherry-pick-${{ matrix.label }}-${{ github.sha }}"
 
       ## Failure Logging to issues and GChat Group
       - name: Create Github issue on cherrypick failure
