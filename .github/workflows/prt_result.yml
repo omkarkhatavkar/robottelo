@@ -30,8 +30,9 @@ jobs:
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
-            Build ${{ github.event.inputs.build_number }} has ${{ github.event.inputs.build_status }}!
-            ${{ github.event.inputs.pytest_result }}
+            Build Number: ${{ github.event.inputs.build_number }}
+            Build Status: ${{ github.event.inputs.build_status }}
+            Test Result : ${{ github.event.inputs.pytest_result }}
           pr_number: ${{ github.event.inputs.pr_number }}
           GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
 
