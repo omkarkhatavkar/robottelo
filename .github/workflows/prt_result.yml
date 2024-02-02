@@ -41,15 +41,14 @@ jobs:
         if: ${{ always() && github.event.inputs.build_status != '' }}
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.CHERRYPICK_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const status = "${{ github.event.inputs.build_status }}";
-            const issue = github.rest.issues.get({
+            const response = await github.rest.issues.get({
               issue_number: ${{ github.event.inputs.pr_number }},
               owner: context.repo.owner,
               repo: context.repo.repo,
             })
-            print(issue)
             if (status === "success") {
               github.rest.issues.addLabels({
                 issue_number:  ${{ github.event.inputs.pr_number }},
@@ -58,8 +57,7 @@ jobs:
                 labels:["PRT-Passed"]
               })
               # Check if the label exists using GitHub API
-              label_exists=$(curl -s -H "Authorization: Bearer ${{ secrets.CHERRYPICK_PAT }}" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.inputs.pr_number }}/labels" | jq ".[].name" | grep -Fx "PRT-Failed")
+              const labelExists = response.data.labels.some(label => label.name === 'PRT-Failed');
               if (label_exists){
                 github.rest.issues.removeLabel({
                   issue_number: ${{ github.event.inputs.pr_number }},
@@ -77,14 +75,16 @@ jobs:
                 labels: ["PRT-Failed"]
               })
               # Check if the label exists using GitHub API
-              label_exists=$(curl -s -H "Authorization: Bearer ${{ secrets.CHERRYPICK_PAT }}" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.inputs.pr_number }}/labels" | jq ".[].name" | grep -Fx "PRT-Passed")
+              const labelExists = response.data.labels.some(label => label.name === 'PRT-Passed');
               if (label_exists){
                 github.rest.issues.removeLabel({
                   issue_number: ${{ github.event.inputs.pr_number }},
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   labels:["PRT-Passed"]
+                })
+              }
+            }
                 })
               }
             }
