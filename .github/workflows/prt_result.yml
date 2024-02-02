@@ -47,15 +47,15 @@ jobs:
             if (status === "success") {
               github.rest.issues.addLabels({
                 issue_number: ${{ github.event.inputs.pr_number }},
-                owner: github.repository_owner,
-                repo: github.repository,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 labels:["PRT-Passed"]
               })
             } else{
               github.rest.issues.addLabels({
                 issue_number: ${{ github.event.inputs.pr_number }},
-                owner: github.repository_owner,
-                repo: github.repository,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 labels: ["PRT-Failed"]
               });
             }
