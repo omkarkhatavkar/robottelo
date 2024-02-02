@@ -44,7 +44,7 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const status = "${{ github.event.inputs.build_status }}";
-            const response = await github.rest.issues.get({
+            const response = github.rest.issues.get({
               issue_number: ${{ github.event.inputs.pr_number }},
               owner: context.repo.owner,
               repo: context.repo.repo,
