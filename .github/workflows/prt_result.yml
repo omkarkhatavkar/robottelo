@@ -61,8 +61,8 @@ jobs:
             else{
               github.rest.issues.addLabels({
                 issue_number: ${{ steps.cherrypick.outputs.number }},
-                owner: github.repository_owner,
-                repo: github.repository,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 labels: ["PRT-Failed"]
               })
               github.rest.issues.removeLabel({
