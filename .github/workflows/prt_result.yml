@@ -20,7 +20,7 @@ on:
 
 
 jobs:
-  auto-tag-and-release:
+  post-the-prt-result:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,7 +36,7 @@ jobs:
           pr_number: ${{ github.event.inputs.pr_number }}
           GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
 
-      - name: Add the PRT passed/failed status
+      - name: Add the PRT passed/failed labels
         id: prt-status
         if: ${{ always() && github.event.inputs.build_status != '' }}
         uses: actions/github-script@v7
@@ -44,11 +44,6 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const status = "${{ github.event.inputs.build_status }}";
-            const response = github.rest.issues.get({
-              issue_number: ${{ github.event.inputs.pr_number }},
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            })
             if (status === "success") {
               github.rest.issues.addLabels({
                 issue_number:  ${{ github.event.inputs.pr_number }},
@@ -56,16 +51,7 @@ jobs:
                 repo: context.repo.repo,
                 labels:["PRT-Passed"]
               })
-              # Check if the label exists using GitHub API
-              const labelExists = response.data.labels.some(label => label.name === 'PRT-Failed');
-              if (label_exists){
-                github.rest.issues.removeLabel({
-                  issue_number: ${{ github.event.inputs.pr_number }},
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  labels:["PRT-Failed"]
-                })
-              }
+              core.setOutput('result', 'PRT-Passed');
             }
             else{
               github.rest.issues.addLabels({
@@ -74,14 +60,29 @@ jobs:
                 repo: context.repo.repo,
                 labels: ["PRT-Failed"]
               })
-              # Check if the label exists using GitHub API
-              const labelExists = response.data.labels.some(label => label.name === 'PRT-Passed');
-              if (label_exists){
-                github.rest.issues.removeLabel({
-                  issue_number: ${{ github.event.inputs.pr_number }},
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  labels:["PRT-Passed"]
+              core.setOutput('result', 'PRT-Failed');
+            }
+      - name: Remove the label if
+        if: ${{ always() && github.event.inputs.build_status != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.issue.owner,
+              repo: context.issue.repo,
+              issue_number:  ${{ github.event.inputs.pr_number }},
+            });
+            const status = "${{ github.event.inputs.build_status }}";
+            if (status === "success") {
+              const labelExists = issue.data.labels.find(({ name }) =>
+                 name === "PRT-Failed"
+              );
+              if (labelExists){
+              github.rest.issues.removeLabels({
+                issue_number: ${{ github.event.inputs.pr_number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: ["PRT-Failed"]
                 })
               }
             }
