@@ -46,16 +46,29 @@ jobs:
             const status = "${{ github.event.inputs.build_status }}";
             if (status === "success") {
               github.rest.issues.addLabels({
-                issue_number: ${{ github.event.inputs.pr_number }},
+                issue_number: ${{ steps.cherrypick.outputs.number }},
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 labels:["PRT-Passed"]
               })
-            } else{
-              github.rest.issues.addLabels({
-                issue_number: ${{ github.event.inputs.pr_number }},
+              github.rest.issues.removeLabel({
+                issue_number: ${{ steps.cherrypick.outputs.number }},
                 owner: context.repo.owner,
                 repo: context.repo.repo,
+                labels:["PRT-Failed"]
+              })
+            }
+            else{
+              github.rest.issues.addLabels({
+                issue_number: github.run_id,
+                owner: github.repository_owner,
+                repo: github.repository,
                 labels: ["PRT-Failed"]
               });
+              github.rest.issues.removeLabel({
+                issue_number: ${{ steps.cherrypick.outputs.number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels:["PRT-Passed"]
+              })
             }
