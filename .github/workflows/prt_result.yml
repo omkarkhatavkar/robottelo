@@ -78,7 +78,7 @@ jobs:
                  name === "PRT-Failed"
               );
               if (labelExists){
-              github.rest.issues.removeLabels({
+              github.rest.issues.removeLabel({
                 issue_number: ${{ github.event.inputs.pr_number }},
                 owner: context.repo.owner,
                 repo: context.repo.repo,
