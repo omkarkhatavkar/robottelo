@@ -44,6 +44,12 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const status = "${{ github.event.inputs.build_status }}";
+            const issue = github.rest.issues.get({
+              issue_number: ${{ github.event.inputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })
+            print(issue)
             if (status === "success") {
               github.rest.issues.addLabels({
                 issue_number:  ${{ github.event.inputs.pr_number }},
