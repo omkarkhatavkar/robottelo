@@ -64,7 +64,7 @@ jobs:
                 owner: github.repository_owner,
                 repo: github.repository,
                 labels: ["PRT-Failed"]
-              });
+              })
               github.rest.issues.removeLabel({
                 issue_number: ${{ steps.cherrypick.outputs.number }},
                 owner: context.repo.owner,
