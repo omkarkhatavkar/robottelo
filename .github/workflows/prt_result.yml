@@ -51,13 +51,11 @@ jobs:
                 repo: context.repo.repo,
                 labels:["PRT-Passed"]
               })
-              github.rest.issues.removeLabel({
-                issue_number: ${{ github.event.inputs.pr_number }},
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                labels:["PRT-Failed"]
-              })
-            }
+              # Remove the label using GitHub API
+              curl -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.CHERRYPICK_PAT }}" \
+                "https://api.github.com/repos/${ GITHUB_REPOSITORY }/issues/${{ github.event.inputs.pr_number }}/labels/PRT-Failed"
+              }
             else{
               github.rest.issues.addLabels({
                 issue_number: ${{ github.event.inputs.pr_number }},
@@ -65,10 +63,9 @@ jobs:
                 repo: context.repo.repo,
                 labels: ["PRT-Failed"]
               })
-              github.rest.issues.removeLabel({
-                issue_number: ${{ github.event.inputs.pr_number }},
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                labels:["PRT-Passed"]
-              })
+              # Remove the label using GitHub API
+              curl -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.CHERRYPICK_PAT }}" \
+                "https://api.github.com/repos/${ GITHUB_REPOSITORY }/issues/${{ github.event.inputs.pr_number }}/labels/PRT-Passed"
+              }
             }
