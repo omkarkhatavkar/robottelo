@@ -44,7 +44,7 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const status = "${{ github.event.inputs.build_status }}";
-            if (status === "success") {
+            if (status === "SUCCESS") {
               github.rest.issues.addLabels({
                 issue_number:  ${{ github.event.inputs.pr_number }},
                 owner: context.repo.owner,
@@ -73,7 +73,7 @@ jobs:
               issue_number:  ${{ github.event.inputs.pr_number }},
             });
             const status = "${{ github.event.inputs.build_status }}";
-            if (status === "success") {
+            if (status === "SUCCESS") {
               const labelExists = issue.data.labels.find(({ name }) =>
                  name === "PRT-Failed"
               );
