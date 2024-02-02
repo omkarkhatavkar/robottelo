@@ -51,13 +51,11 @@ jobs:
                 repo: github.repository,
                 labels:["PRT-Passed"]
               })
-            else{
+            } else{
               github.rest.issues.addLabels({
                 issue_number: ${{ github.event.inputs.pr_number }},
                 owner: github.repository_owner,
                 repo: github.repository,
                 labels: ["PRT-Failed"]
               });
-            
-             
             }
