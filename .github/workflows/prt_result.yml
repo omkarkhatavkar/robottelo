@@ -82,7 +82,7 @@ jobs:
                 issue_number: ${{ github.event.inputs.pr_number }},
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                labels: ["PRT-Failed"]
+                name: ["PRT-Failed"]
                 })
               }
             }
