@@ -58,6 +58,11 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const issue = await github.rest.issues.get({
+              owner: context.issue.owner,
+              repo: context.issue.repo,
+              issue_number: prNumber,
+            });
             const prNumber = ${{ github.event.inputs.pr_number }};
             const buildStatus = "${{ github.event.inputs.build_status }}";
             const labelToRemove = buildStatus === "SUCCESS" ? "PRT-Failed" : "PRT-Passed";
