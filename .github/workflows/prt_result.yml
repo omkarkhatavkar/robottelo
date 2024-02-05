@@ -30,9 +30,12 @@ jobs:
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
+            ```
             Build Number: ${{ github.event.inputs.build_number }}
             Build Status: ${{ github.event.inputs.build_status }}
+            PRT Comment: ${{ github.event.inputs.prt_comment }}
             Test Result : ${{ github.event.inputs.pytest_result }}
+            ```
           pr_number: ${{ github.event.inputs.pr_number }}
           GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
 
@@ -46,7 +49,6 @@ jobs:
             const prNumber = ${{ github.event.inputs.pr_number }};
             const buildStatus = "${{ github.event.inputs.build_status }}";
             const labelToAdd = buildStatus === "SUCCESS" ? "PRT-Passed" : "PRT-Failed";
-            
             github.rest.issues.addLabels({
               issue_number: prNumber,
               owner: context.repo.owner,
@@ -67,7 +69,6 @@ jobs:
             const buildStatus = "${{ github.event.inputs.build_status }}";
             const labelToRemove = buildStatus === "SUCCESS" ? "PRT-Failed" : "PRT-Passed";
             const labelExists = issue.data.labels.some(({ name }) => name === labelToRemove);
-            
             if (labelExists) {
               github.rest.issues.removeLabel({
                 issue_number: prNumber,
@@ -76,4 +77,3 @@ jobs:
                 name: [labelToRemove]
               });
             }
-
