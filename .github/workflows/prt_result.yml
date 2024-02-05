@@ -17,6 +17,9 @@ on:
       build_status:
         type: string
         description: status of jenkins build e.g. success, unstable or error
+      prt_comment:
+        type: string
+        description: prt pytest comment triggered the PRT checks  
 
 
 jobs:
