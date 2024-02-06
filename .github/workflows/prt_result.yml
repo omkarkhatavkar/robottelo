@@ -19,7 +19,7 @@ on:
         description: status of jenkins build e.g. success, unstable or error
       prt_comment:
         type: string
-        description: prt pytest comment triggered the PRT checks  
+        description: prt pytest comment triggered the PRT checks
 
 
 jobs:
@@ -33,6 +33,7 @@ jobs:
         uses: thollander/actions-comment-pull-request@v2
         with:
           message: |
+            **PRT Result**
             ```
             Build Number: ${{ github.event.inputs.build_number }}
             Build Status: ${{ github.event.inputs.build_status }}
@@ -50,7 +51,7 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const prNumber = ${{ github.event.inputs.pr_number }};
-            const buildStatus = "${{ github.event.inputs.build_status }}";
+            const buildStatus = ${{ github.event.inputs.build_status }};
             const labelToAdd = buildStatus === "SUCCESS" ? "PRT-Passed" : "PRT-Failed";
             github.rest.issues.addLabels({
               issue_number: prNumber,
@@ -69,7 +70,7 @@ jobs:
               repo: context.issue.repo,
               issue_number: prNumber,
             });
-            const buildStatus = "${{ github.event.inputs.build_status }}";
+            const buildStatus = ${{ github.event.inputs.build_status }};
             const labelToRemove = buildStatus === "SUCCESS" ? "PRT-Failed" : "PRT-Passed";
             const labelExists = issue.data.labels.some(({ name }) => name === labelToRemove);
             if (labelExists) {
