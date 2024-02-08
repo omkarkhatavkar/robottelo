@@ -115,7 +115,7 @@ jobs:
       ## Failure Logging to issues
       - name: Create Github issue on cherrypick failure
         id: create-issue
-        if: ${{ always() && steps.search_pr.outputs.pr_found == 'true' && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
+        if: ${{ always() && steps.search_pr.outputs.pr_found == 'false' && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
         uses: dacbd/create-issue-action@main
         with:
           token: ${{ secrets.CHERRYPICK_PAT }}
