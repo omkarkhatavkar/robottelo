@@ -101,7 +101,7 @@ jobs:
         id: search_pr
         if: always()
         run: |
-          PR_TITLE="[${{ matrix.label }}] ${{ github.event.inputs.pr_title }}"
+          PR_TITLE="[${{ matrix.label }}] ${{ env.title }}"
           API_URL="https://api.github.com/repos/${{ github.repository }}/pulls?state=open"
           PR_SEARCH_RESULT=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$API_URL" | jq --arg title "$PR_TITLE" '.[] | select(.title == $title)')
           if [ -n "$PR_SEARCH_RESULT" ]; then
@@ -112,7 +112,7 @@ jobs:
             echo "PR is not Found with title $PR_TITLE"
           fi
 
-      ## Failure Logging to issues and GChat Group
+      ## Failure Logging to issues
       - name: Create Github issue on cherrypick failure
         id: create-issue
         if: ${{ always() && steps.search_pr.outputs.pr_found == 'true' && steps.cherrypick.outcome != 'success' && startsWith(matrix.label, '6.') && matrix.label != github.base_ref }}
