@@ -16,8 +16,6 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            if ('${{github.event_name}}' === 'push') {
-              // Your code to handle the event due to new commit
               const prNumber = ${{ github.event.number }};
               const issue = await github.rest.issues.get({
                 owner: context.issue.owner,
@@ -36,4 +34,4 @@ jobs:
                   });
                 }));
               }
-            }
+            
