@@ -14,13 +14,13 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
               const prNumber = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                commit_sha: github.context.sha,
-                owner: github.context.repo.owner,
-                repo: github.context.repo.repo,
+                commit_sha: context.sha,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
               }).data[0].number;
               const issue = await github.rest.issues.get({
-                owner: github.context.repo.owner,
-                repo: github.context.repo.repo,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 issue_number: prNumber,
               });
               const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
