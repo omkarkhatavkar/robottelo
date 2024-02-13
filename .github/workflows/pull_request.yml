@@ -23,7 +23,7 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            const prNumber = ${{ ${{ github.event.number }}}};
+            const prNumber = ${{ github.event.number }};
             const issue = await github.rest.issues.get({
               owner: context.issue.owner,
               repo: context.issue.repo,
