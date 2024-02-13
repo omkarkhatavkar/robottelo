@@ -15,8 +15,8 @@ jobs:
           script: |
               const prNumber = ${{ github.event.number }};
               const issue = await github.rest.issues.get({
-                owner: context.issue.owner,
-                repo: context.issue.repo,
+                owner: github.context.repo.owner,
+                repo: github.context.repo.repo,
                 issue_number: prNumber,
               });
               const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
@@ -25,8 +25,8 @@ jobs:
                 await Promise.all(labelsToRemoveFiltered.map(async label => {
                   await github.rest.issues.removeLabel({
                     issue_number: prNumber,
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
+                    owner: github.context.repo.owner,
+                    repo: github.context.repo.repo,
                     name: label
                   });
                 }));
