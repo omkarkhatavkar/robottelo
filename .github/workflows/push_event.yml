@@ -13,11 +13,11 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-              const prNumber = await github.rest.issues.get({
-                owner: github.context.repo.owner,  // Owner of the repository
-                repo: github.context.repo.repo,    // Repository name
-                issue_number: prNumber,            // Pull request number
-              });
+              const prNumber = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                commit_sha: github.context.sha,
+                owner: github.context.repo.owner,
+                repo: github.context.repo.repo,
+              }).data[0].number;
               const issue = await github.rest.issues.get({
                 owner: github.context.repo.owner,
                 repo: github.context.repo.repo,
