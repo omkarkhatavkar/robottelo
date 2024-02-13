@@ -23,23 +23,26 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            const prNumber = ${{ github.event.number }};
-            const issue = await github.rest.issues.get({
-              owner: context.issue.owner,
-              repo: context.issue.repo,
-              issue_number: prNumber,
-            });
-            const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
-            const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
-            if (labelsToRemoveFiltered.length > 0) {
-              await Promise.all(labelsToRemoveFiltered.map(async label => {
-                await github.rest.issues.removeLabel({
-                  issue_number: prNumber,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: label
-                });
-              }));
+            if (github.context.eventName === 'push') {
+              // Your code to handle the event due to new commit
+              const prNumber = ${{ github.event.number }};
+              const issue = await github.rest.issues.get({
+                owner: context.issue.owner,
+                repo: context.issue.repo,
+                issue_number: prNumber,
+              });
+              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+              if (labelsToRemoveFiltered.length > 0) {
+                await Promise.all(labelsToRemoveFiltered.map(async label => {
+                  await github.rest.issues.removeLabel({
+                    issue_number: prNumber,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label
+                  });
+                }));
+              }
             }
       - name: Checkout Robottelo
         uses: actions/checkout@v4
