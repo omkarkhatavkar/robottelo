@@ -29,15 +29,17 @@ jobs:
               repo: context.issue.repo,
               issue_number: prNumber,
             });
-            const labelToRemove = ['PRT-Failed', 'PRT-Passed'];
-            const labelExists = issue.data.labels.some(({ name }) => labelToRemove.includes(name));
-            if (labelExists) {
-              github.rest.issues.removeLabel({
-                issue_number: prNumber,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: [labelToRemove]
-              });
+            const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+            const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+            if (labelsToRemoveFiltered.length > 0) {
+              await Promise.all(labelsToRemoveFiltered.map(async label => {
+                await github.rest.issues.removeLabel({
+                  issue_number: prNumber,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label
+                });
+              }));
             }
       - name: Checkout Robottelo
         uses: actions/checkout@v4
