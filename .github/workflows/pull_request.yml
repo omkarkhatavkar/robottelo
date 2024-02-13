@@ -23,7 +23,7 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            if (['opened', 'synchronize'].includes(github.context.payload.action)) {
+            if (['opened', 'synchronize'].includes(${{ github.event.action }} )) {
               // Your code to handle the event due to new commit
               const prNumber = ${{ github.event.number }};
               const issue = await github.rest.issues.get({
