@@ -8,10 +8,7 @@ jobs:
     name: Remove PRT labels for new commit
     runs-on: ubuntu-latest
     steps:
-      - run: echo "event name is:" ${{ github.event_name }} 
-      - run: echo "event type is:" ${{ github.event.action }} 
       - name: Remove the previous PRT Result labels
-        if: contains(github.event.pull_request.labels.*.name, 'PRT')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
