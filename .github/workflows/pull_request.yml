@@ -2,6 +2,7 @@
 name: Robottelo - CI
 
 on:
+  push:
   pull_request:
     types: ["opened", "synchronize", "reopened"]
 
@@ -23,7 +24,7 @@ jobs:
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            if (['opened', 'synchronize'].includes('${{ github.event.action }}')) {
+            if ('${{github.event_name}}' === 'push' && ['opened', 'synchronize'].includes('${{ github.event.action }}')) {
               // Your code to handle the event due to new commit
               const prNumber = ${{ github.event.number }};
               const issue = await github.rest.issues.get({
