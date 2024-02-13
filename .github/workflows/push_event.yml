@@ -8,6 +8,17 @@ jobs:
     name: Remove PRT labels for new commit
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2.3.4
+        with:
+          fetch-depth: 0
+      - name: Get Pull Request Number
+        id: pr
+        run: echo "::set-output name=pull_request_number::$(gh pr view --json number -q .number || echo "")"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - run: echo ${{ steps.pr.outputs.pull_request_number }}
+
       - name: Remove the previous PRT Result labels
         uses: actions/github-script@v7
         with:
