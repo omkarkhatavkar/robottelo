@@ -3,8 +3,6 @@ name: Robottelo - CI
 
 on:
   push:
-  pull_request:
-    types: ["opened", "synchronize", "reopened"]
 
 env:
     PYCURL_SSL_LIBRARY: openssl
