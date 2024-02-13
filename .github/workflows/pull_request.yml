@@ -2,6 +2,7 @@
 name: Robottelo - CI
 
 on:
+  push:
   pull_request:
     types: ["opened", "synchronize", "reopened"]
 
@@ -18,25 +19,31 @@ jobs:
         python-version: ['3.10', '3.11', '3.12']
     steps:
       - name: Remove the previous PRT Result labels
+        if: contains(github.event.pull_request.labels.*.name, 'PRT')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            const prNumber = ${{ ${{ github.event.number }}}};
-            const issue = await github.rest.issues.get({
-              owner: context.issue.owner,
-              repo: context.issue.repo,
-              issue_number: prNumber,
-            });
-            const labelToRemove = ['PRT-Failed', 'PRT-Passed'];
-            const labelExists = issue.data.labels.some(({ name }) => labelToRemove.includes(name));
-            if (labelExists) {
-              github.rest.issues.removeLabel({
+            if ('${{github.event_name}}' === 'push' && ['opened', 'synchronize'].includes('${{ github.event.action }}')) {
+              // Your code to handle the event due to new commit
+              const prNumber = ${{ github.event.number }};
+              const issue = await github.rest.issues.get({
+                owner: context.issue.owner,
+                repo: context.issue.repo,
                 issue_number: prNumber,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: [labelToRemove]
               });
+              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+              if (labelsToRemoveFiltered.length > 0) {
+                await Promise.all(labelsToRemoveFiltered.map(async label => {
+                  await github.rest.issues.removeLabel({
+                    issue_number: prNumber,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label
+                  });
+                }));
+              }
             }
       - name: Checkout Robottelo
         uses: actions/checkout@v4
