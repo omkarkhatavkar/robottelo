@@ -22,7 +22,7 @@ jobs:
         
         - name: run this always
           if: always()
-          run: echo "${{steps.prt.outputs.result}}"
+          run: echo ${{steps.prt.outputs.result}}
             
         - name: remove the PRT Passed/Failed label for new commit
           if: always() && ${{steps.prt.outputs.result}} == 'not found'
