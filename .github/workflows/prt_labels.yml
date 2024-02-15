@@ -19,19 +19,10 @@ jobs:
             context: 'Robottelo-Runner'
             wait-interval: 60
             count: 100
-  
-        - name: Check the PRT status
-          if: always()
-          run: |
-            if [ ${{ steps.outcome.outputs.result }} == 'success' ]; then
-              echo "Status check passed!"
-            else
-              echo "Status check failed!"
-            fi
         
         - name: run this always
           if: always()
-          run: echo ${{ steps.outcome.outputs.result }} 
+          run: echo ${{ github.event.number }}
             
         - name: remove the PRT Passed/Failed label for new commit
           if: always() && ${{steps.outcome.outputs.result}} == 'not_found'
@@ -39,7 +30,7 @@ jobs:
           with:
             github-token: ${{ secrets.CHERRYPICK_PAT }}
             script: |
-              const prNumber = context.payload.number;
+              const prNumber = '${{ github.event.number }}';
               const issue = await github.rest.issues.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
