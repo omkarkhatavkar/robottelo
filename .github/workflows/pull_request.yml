@@ -18,33 +18,40 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
     steps:
-      - name: Remove the previous PRT Result labels
-        if: contains(github.event.pull_request.labels.*.name, 'PRT')
-        uses: actions/github-script@v7
+      - name: get the PRT status, it will be empty in case of the new commit
+        id: status
+        uses: omkarkhatavkar/wait-for-status-checks@main
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          context: 'Robottelo-Runner'
+          wait-interval: 2
+          count: 5
+
+      - name: remove the PRT Passed/Failed label for new commit
+        if: ${{steps.status.outputs.result}} == 'not found'
         with:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
-            if ('${{github.event_name}}' === 'push' && ['opened', 'synchronize'].includes('${{ github.event.action }}')) {
-              // Your code to handle the event due to new commit
-              const prNumber = ${{ github.event.number }};
-              const issue = await github.rest.issues.get({
-                owner: context.issue.owner,
-                repo: context.issue.repo,
-                issue_number: prNumber,
-              });
-              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
-              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
-              if (labelsToRemoveFiltered.length > 0) {
-                await Promise.all(labelsToRemoveFiltered.map(async label => {
-                  await github.rest.issues.removeLabel({
-                    issue_number: prNumber,
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label
-                  });
-                }));
-              }
+            const prNumber = ${{ github.event.number }};
+            const issue = await github.rest.issues.get({
+              owner: context.issue.owner,
+              repo: context.issue.repo,
+              issue_number: prNumber,
+            });
+            const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+            const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+            if (labelsToRemoveFiltered.length > 0) {
+              await Promise.all(labelsToRemoveFiltered.map(async label => {
+                await github.rest.issues.removeLabel({
+                  issue_number: prNumber,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label
+                });
+              }));
             }
+          }
+          
       - name: Checkout Robottelo
         uses: actions/checkout@v4
 
