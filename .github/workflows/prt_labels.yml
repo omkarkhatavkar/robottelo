@@ -1,0 +1,50 @@
+# CI stages to execute against Pull Requests
+name: Robottelo - CI
+
+on:
+  push:
+  pull_request:
+    types: ["opened", "synchronize"]
+
+jobs:
+    prt_labels:
+      name: remove the PRT label, if it is a new commit
+      runs-on: ubuntu-latest
+      steps:
+        - name: get the PRT status, it will be empty in case of the new commit
+          id: prt
+          uses: omkarkhatavkar/wait-for-status-checks@main
+          with:
+            ref: ${{ github.sha }}
+            context: 'Robottelo-Runner'
+            wait-interval: 2
+            count: 5
+        
+        - name: run this always
+          if: always()
+          run: echo "${{steps.prt.outputs.result}}"
+            
+        - name: remove the PRT Passed/Failed label for new commit
+          if: always() && ${{steps.status.outputs.result}} == 'not found'
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.CHERRYPICK_PAT }}
+            script: |
+              const prNumber = ${{ github.event.number }};
+              const issue = await github.rest.issues.get({
+                owner: context.issue.owner,
+                repo: context.issue.repo,
+                issue_number: prNumber,
+              });
+              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+              if (labelsToRemoveFiltered.length > 0) {
+                await Promise.all(labelsToRemoveFiltered.map(async label => {
+                  await github.rest.issues.removeLabel({
+                    issue_number: prNumber,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label
+                  });
+                }));
+              }
