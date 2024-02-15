@@ -39,10 +39,10 @@ jobs:
           with:
             github-token: ${{ secrets.CHERRYPICK_PAT }}
             script: |
-              const prNumber = ${{ github.event.number }};
+              const prNumber = context.issue.number;
               const issue = await github.rest.issues.get({
-                owner: context.issue.owner,
-                repo: context.issue.repo,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 issue_number: prNumber,
               });
               const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
