@@ -11,68 +11,108 @@ env:
     ROBOTTELO_BUGZILLA__API_KEY: ${{ secrets.BUGZILLA_KEY }}
 
 jobs:
-  codechecks:
-    name: Code Quality
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.10', '3.11', '3.12']
-    steps:
-      - name: Checkout Robottelo
-        uses: actions/checkout@v4
+    prt_labels:
+      name: remove the PRT label, if it is a new commit 
+      runs-on: ubuntu-latest
+      steps:
+        - name: get the PRT status, it will be empty in case of the new commit
+          id: status
+          uses: omkarkhatavkar/wait-for-status-checks@main
+          with:
+            ref: ${{ github.event.pull_request.head.sha }}
+            context: 'Robottelo-Runner'
+            wait-interval: 2
+            count: 5
 
-      - name: Set Up Python-${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+        - run: echo "${{steps.status.outputs.result}}"  
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt-get install -y libgnutls28-dev libcurl4-openssl-dev libssl-dev
-          wget https://raw.githubusercontent.com/SatelliteQE/broker/master/broker_settings.yaml.example
-          # link vs compile time ssl implementations can break the environment when installing requirements
-          # Uninstall pycurl - its likely not installed, but in case the ubuntu-latest packages change
-          # Then compile and install it with PYCURL_SSL_LIBRARY set to openssl
-          pip install -U pip wheel
-          pip uninstall -y pycurl
-          pip install --compile --no-cache-dir pycurl
-          pip install -U --no-cache-dir -r requirements.txt -r requirements-optional.txt
-          for conffile in conf/*.yaml.template; do mv -- "$conffile" "${conffile%.yaml.template}.yaml"; done
-          cp broker_settings.yaml.example broker_settings.yaml
-          cp .env.example .env
-
-      - name: Pre Commit Checks
-        uses: pre-commit/action@v3.0.1
-
-      - name: Collect Tests
-        run: |
-          # To skip vault login in pull request checks
-          export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
-          pytest --collect-only --disable-pytest-warnings tests/foreman/ tests/robottelo/
-          pytest --collect-only --disable-pytest-warnings -m pre_upgrade tests/upgrades/
-          pytest --collect-only --disable-pytest-warnings -m post_upgrade tests/upgrades/
-
-      - name: Collect Tests with xdist
-        run: |
-          # To skip vault login in pull request checks
-          export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
-          pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 tests/foreman/ tests/robottelo/
-          pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m pre_upgrade tests/upgrades/
-          pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m post_upgrade tests/upgrades/
-
-      - name: Run Robottelo's Tests
-        run: |
-          # To skip vault login in pull request checks
-          export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
-          pytest -sv tests/robottelo/
-
-      - name: Make Docs
-        run: |
-          make test-docstrings
-          make docs
-
-      - name: Analysis (git diff)
-        if: failure()
-        run: git diff
+        - name: remove the PRT Passed/Failed label for new commit
+          if: ${{steps.status.outputs.result}} == 'not found'
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.CHERRYPICK_PAT }}
+            script: |
+              const prNumber = ${{ github.event.number }};
+              const issue = await github.rest.issues.get({
+                owner: context.issue.owner,
+                repo: context.issue.repo,
+                issue_number: prNumber,
+              });
+              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
+              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
+              if (labelsToRemoveFiltered.length > 0) {
+                await Promise.all(labelsToRemoveFiltered.map(async label => {
+                  await github.rest.issues.removeLabel({
+                    issue_number: prNumber,
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label
+                  });
+                }));
+              }
+              
+    codechecks:
+      name: Code Quality
+      runs-on: ubuntu-latest
+      strategy:
+        matrix:
+          python-version: ['3.10', '3.11', '3.12']
+      steps:
+        - name: Checkout Robottelo
+          uses: actions/checkout@v4
   
+        - name: Set Up Python-${{ matrix.python-version }}
+          uses: actions/setup-python@v5
+          with:
+            python-version: ${{ matrix.python-version }}
+  
+        - name: Install Dependencies
+          run: |
+            sudo apt update
+            sudo apt-get install -y libgnutls28-dev libcurl4-openssl-dev libssl-dev
+            wget https://raw.githubusercontent.com/SatelliteQE/broker/master/broker_settings.yaml.example
+            # link vs compile time ssl implementations can break the environment when installing requirements
+            # Uninstall pycurl - its likely not installed, but in case the ubuntu-latest packages change
+            # Then compile and install it with PYCURL_SSL_LIBRARY set to openssl
+            pip install -U pip wheel
+            pip uninstall -y pycurl
+            pip install --compile --no-cache-dir pycurl
+            pip install -U --no-cache-dir -r requirements.txt -r requirements-optional.txt
+            for conffile in conf/*.yaml.template; do mv -- "$conffile" "${conffile%.yaml.template}.yaml"; done
+            cp broker_settings.yaml.example broker_settings.yaml
+            cp .env.example .env
+  
+        - name: Pre Commit Checks
+          uses: pre-commit/action@v3.0.1
+  
+        - name: Collect Tests
+          run: |
+            # To skip vault login in pull request checks
+            export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
+            pytest --collect-only --disable-pytest-warnings tests/foreman/ tests/robottelo/
+            pytest --collect-only --disable-pytest-warnings -m pre_upgrade tests/upgrades/
+            pytest --collect-only --disable-pytest-warnings -m post_upgrade tests/upgrades/
+  
+        - name: Collect Tests with xdist
+          run: |
+            # To skip vault login in pull request checks
+            export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
+            pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 tests/foreman/ tests/robottelo/
+            pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m pre_upgrade tests/upgrades/
+            pytest --collect-only --setup-plan --disable-pytest-warnings -n 2 -m post_upgrade tests/upgrades/
+  
+        - name: Run Robottelo's Tests
+          run: |
+            # To skip vault login in pull request checks
+            export VAULT_SECRET_ID_FOR_DYNACONF=somesecret
+            pytest -sv tests/robottelo/
+  
+        - name: Make Docs
+          run: |
+            make test-docstrings
+            make docs
+  
+        - name: Analysis (git diff)
+          if: failure()
+          run: git diff
+    
