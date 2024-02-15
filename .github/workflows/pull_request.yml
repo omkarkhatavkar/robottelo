@@ -12,7 +12,7 @@ env:
 
 jobs:
     prt_labels:
-      name: remove the PRT label, if it is a new commit 
+      name: remove the PRT label, if it is a new commit
       runs-on: ubuntu-latest
       steps:
         - name: get the PRT status, it will be empty in case of the new commit
@@ -23,6 +23,10 @@ jobs:
             context: 'Robottelo-Runner'
             wait-interval: 2
             count: 5
+        
+        - name: run this always
+          if: always()
+          run: echo "${{steps.status.outputs.result}}"
             
         - name: remove the PRT Passed/Failed label for new commit
           if: always() && ${{steps.status.outputs.result}} == 'not found'
