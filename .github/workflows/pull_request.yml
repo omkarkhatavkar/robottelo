@@ -11,45 +11,6 @@ env:
     ROBOTTELO_BUGZILLA__API_KEY: ${{ secrets.BUGZILLA_KEY }}
 
 jobs:
-  prt_labels:
-      name: remove the PRT label, if it is a new commit 
-      runs-on: ubuntu-latest
-      steps:
-        - name: get the PRT status, it will be empty in case of the new commit
-          id: status
-          uses: omkarkhatavkar/wait-for-status-checks@main
-          with:
-            ref: ${{ github.event.pull_request.head.sha }}
-            context: 'Robottelo-Runner'
-            wait-interval: 2
-            count: 5
-
-        - run: echo "${{steps.status.outputs.result}}"  
-
-        - name: remove the PRT Passed/Failed label for new commit
-          if: ${{steps.status.outputs.result}} == 'not found'
-          with:
-            github-token: ${{ secrets.CHERRYPICK_PAT }}
-            script: |
-              const prNumber = ${{ github.event.number }};
-              const issue = await github.rest.issues.get({
-                owner: context.issue.owner,
-                repo: context.issue.repo,
-                issue_number: prNumber,
-              });
-              const labelsToRemove = ['PRT-Failed', 'PRT-Passed'];
-              const labelsToRemoveFiltered = labelsToRemove.filter(label => issue.data.labels.some(({ name }) => name === label));
-              if (labelsToRemoveFiltered.length > 0) {
-                await Promise.all(labelsToRemoveFiltered.map(async label => {
-                  await github.rest.issues.removeLabel({
-                    issue_number: prNumber,
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label
-                  });
-                }));
-              }
-  
   codechecks:
     name: Code Quality
     runs-on: ubuntu-latest
