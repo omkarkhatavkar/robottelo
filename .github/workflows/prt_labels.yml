@@ -12,7 +12,7 @@ jobs:
       runs-on: ubuntu-latest
       steps:
         - name: get the PRT status, it will be empty in case of the new commit
-          id: prt
+          id: outcome
           uses: omkarkhatavkar/wait-for-status-checks@main
           with:
             ref: ${{ github.sha }}
@@ -22,10 +22,10 @@ jobs:
         
         - name: run this always
           if: always()
-          run: echo ${{steps.prt.outputs.result}}
+          run: echo ${{steps.outcome.outputs.result}}
             
         - name: remove the PRT Passed/Failed label for new commit
-          if: always() && ${{steps.prt.outputs.result}} == 'not found'
+          if: always() && ${{steps.outcome.outputs.result}} == 'not found'
           uses: actions/github-script@v7
           with:
             github-token: ${{ secrets.CHERRYPICK_PAT }}
