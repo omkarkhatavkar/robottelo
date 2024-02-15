@@ -11,18 +11,27 @@ jobs:
       name: remove the PRT label, if it is a new commit
       runs-on: ubuntu-latest
       steps:
-        - name: get the PRT status, it will be empty in case of the new commit
+        - name: Fetch the PRT status
           id: outcome
           uses: omkarkhatavkar/wait-for-status-checks@main
           with:
-            ref: ${{ github.sha }}
+            ref: ${{ github.head_ref }}
             context: 'Robottelo-Runner'
-            wait-interval: 2
-            count: 5
+            wait-interval: 60
+            count: 100
+  
+        - name: Check the PRT status
+          if: always()
+          run: |
+            if [ ${{ steps.outcome.outputs.result }} == 'success' ]; then
+              echo "Status check passed!"
+            else
+              echo "Status check failed!"
+            fi
         
         - name: run this always
           if: always()
-          run: echo ${{steps.outcome.outputs.result}}
+          run: echo ${{ steps.outcome.outputs.result }} 
             
         - name: remove the PRT Passed/Failed label for new commit
           if: always() && ${{steps.outcome.outputs.result}} == 'not found'
