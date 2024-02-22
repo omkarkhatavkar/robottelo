@@ -10,7 +10,7 @@ jobs:
     prt_labels:
       name: remove the PRT label, if it is a new commit
       runs-on: ubuntu-latest
-      if: contains(github.event.pull_request.labels.*.name, 'PRT')
+      if: contains(github.event.pull_request.labels.*.name, 'PRT-Passed') && contains(github.event.pull_request.labels.*.name, 'PRT-Failed')
       steps:
         - name: get the PRT status, it will be empty in case of the new commit
           id: prt
