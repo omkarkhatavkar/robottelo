@@ -18,7 +18,7 @@ jobs:
       - name: Read labels from YAML
         id: read-labels
         run: |
-          LABELS=$(python3 -c "import yaml; print(' '.join(yaml.safe_load(open('./../labels.yaml'))['labels']))")
+          LABELS=$(python3 -c "import yaml; print(' '.join(yaml.safe_load(open('./.github/labels.yaml'))['labels']))")
           echo "::set-output name=LABELS::$LABELS"
     
       - name: apply supported version labels to cherry-pick PRs created by the pre-commit-bot.
