@@ -19,7 +19,7 @@ jobs:
         id: read-labels
         run: |
           LABELS=$(python3 -c "import yaml; print(' '.join(yaml.safe_load(open('./.github/labels.yaml'))['pre_commit_bot_labels']))")
-          echo "::set-output name=LABELS::$LABELS"
+          echo "name=LABELS" >> "$GITHUB_OUTPUT"
     
       - name: apply supported version labels to cherry-pick PRs created by the pre-commit-bot.
         uses: actions/github-script@v7
