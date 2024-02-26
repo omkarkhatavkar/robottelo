@@ -12,9 +12,6 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - name: Install shyaml
-        run: sudo apt update && sudo apt install -y python3-shyaml
-
       - name: Checkout code
         uses: actions/checkout@v2
 
