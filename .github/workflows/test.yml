@@ -27,7 +27,6 @@ jobs:
           github-token: ${{ secrets.CHERRYPICK_PAT }}
           script: |
             const labels = ${{ steps.read-labels.outputs.LABELS }};
-            const allLabels = [...new Set([...labels])];
             github.rest.issues.addLabels({
               issue_number: ${{ steps.cherrypick.outputs.number }},
               owner: context.repo.owner,
