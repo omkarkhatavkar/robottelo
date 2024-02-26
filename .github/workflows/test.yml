@@ -8,32 +8,30 @@ on:
       - reopened
       - synchronize
 
-
 jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
       - name: Install shyaml
         run: sudo apt update && sudo apt install -y python3-shyaml
-        
-  add-labels:
-    name: apply cherry-pick version labels.
-    runs-on: ubuntu-latest
-    steps:
-       - name: Read labels from YAML
-         id: read-labels
-         run: echo "::set-output name=LABELS::$(cat ./../labels.yaml | shyaml get-values pre_commit_bot_labels)"
-      
-       - name: apply supported version labels to cherry-pick PRs created by the pre-commit-bot.
-         uses: actions/github-script@v6
-         with:
-            github-token: ${{ secrets.CHERRYPICK_PAT }}
-            script: |
-              const labels = ${{ steps.read-labels.outputs.LABELS }};
-              const allLabels = [...new Set([...labels])];
-              github.rest.issues.addLabels({
-                issue_number: ${{ steps.cherrypick.outputs.number }},
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                labels: allLabels 
-              });
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Read labels from YAML
+        id: read-labels
+        run: echo "::set-output name=LABELS::$(cat ./../labels.yaml | shyaml get-values pre_commit_bot_labels)"
+    
+      - name: apply supported version labels to cherry-pick PRs created by the pre-commit-bot.
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.CHERRYPICK_PAT }}
+          script: |
+            const labels = ${{ steps.read-labels.outputs.LABELS }};
+            const allLabels = [...new Set([...labels])];
+            github.rest.issues.addLabels({
+              issue_number: ${{ steps.cherrypick.outputs.number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: allLabels 
+            });
