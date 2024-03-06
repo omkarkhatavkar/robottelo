@@ -1,0 +1,28 @@
+### The auto branching workflow triggered through dispatch request from CI
+name: auto-branching
+
+# Run on workflow dispatch from CI
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        type: string
+        description: branch to be created from the master
+
+
+jobs:
+  auto-branching:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+#      - name: create the target branch
+#        run: "git config --local user.email Satellite-QE.satqe.com && git config --local user.name Satellite-QE"
+
+      - name: Create the target branch
+        uses: peterjgrainger/action-create-branch@v2.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          branch: ${{ github.event.inputs.target_branch }}
