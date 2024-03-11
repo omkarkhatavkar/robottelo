@@ -39,7 +39,7 @@ jobs:
         id: update-dependabot
         run: |
             # Read the dependabot.yaml file
-            FILE_PATH="./.github/dependabot.yaml"
+            FILE_PATH="./.github/dependabot.yml"
             TARGET_BRANCH="${{ github.event.inputs.target_branch }}"
 
             # Append the target branch label to the labels node
