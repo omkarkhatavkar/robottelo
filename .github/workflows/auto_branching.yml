@@ -1,4 +1,4 @@
-### The auto branching workflow triggered through dispatch request from CI
+### The auto-branching workflow triggered through a dispatch request from the CI
 name: auto-branching
 
 # Run on workflow dispatch from CI
@@ -12,22 +12,69 @@ on:
 
 jobs:
   auto-branching:
+    name: run this auto-branching on the master branch
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Create the target branch
+        id: create-branch
         uses: peterjgrainger/action-create-branch@v2.2.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           branch: ${{ github.event.inputs.target_branch }}
 
-      - name: Create label for the target branch 
+      - name: Create label for the target branch
+        id: create-label
         run: |
             curl -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               https://api.github.com/repos/${{ github.repository }}/labels \
               -d "{\"name\":\"${{ github.event.inputs.target_branch }}\",\"color\":\"fbca04\"}"
+
+      - name: Update target branch label in dependabot yml file
+        id: update-dependabot
+        run: |
+            # Read the dependabot.yaml file
+            FILE_PATH="./.github/dependabot.yaml"
+            TARGET_BRANCH="${{ github.event.inputs.target_branch }}"
+
+            # Append the target branch label to the labels node
+            awk -v target="$TARGET_BRANCH" '/^ *labels:/ {$0 = $0 "\n      - " target} 1' "$FILE_PATH" > temp.yaml && mv temp.yaml "$FILE_PATH"
+
+      - name: Update repository URLs in requirements.txt
+        id: update-repo-urls
+        run: |
+            # Define the file path
+            FILE_PATH="./requirements.txt"
+
+            # Define the replacement strings
+            replacements=(
+              "git+https://github.com/SatelliteQE/airgun.git@master#egg=airgun git+https://github.com/SatelliteQE/airgun.git@${{ github.event.inputs.target_branch }}#egg=airgun"
+              "git+https://github.com/SatelliteQE/nailgun.git@master#egg=nailgun git+https://github.com/SatelliteQE/nailgun.git@${{ github.event.inputs.target_branch }}#egg=nailgun"
+            )
+
+            # Create a temporary file
+            TEMP_FILE=$(mktemp)
+
+            # Perform replacements using a for loop
+            for replacement in "${replacements[@]}"; do
+              old_url=$(echo "$replacement" | cut -d' ' -f1)
+              new_url=$(echo "$replacement" | cut -d' ' -f2)
+              sed "s|${old_url}|${new_url}|g" "$FILE_PATH" > "$TEMP_FILE" && mv "$TEMP_FILE" "$FILE_PATH"
+            done
+
+      - name: Remove the dispatch release GHA
+        id: remove-dispatch-release-gha
+        run: |
+            rm -rf ./github/workflows/dispatch_release.yml
+
+      - name: print the git diff
+        id: print the git diff
+        run: | 
+            # Display the git diff
+            git diff
+
