@@ -83,6 +83,10 @@ jobs:
               # Remove lines containing @pytest.mark.stream and save the changes to a temporary file
               grep -v '@pytest\.mark\.stream' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
             done
+      
+      - name: Update version in setup.py
+        run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
+
 
       - name: print the git diff
         id: git-diff
