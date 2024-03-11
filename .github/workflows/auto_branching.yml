@@ -95,6 +95,12 @@ jobs:
       - name: Update version in setup.py
         run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
 
+      - name: git diff
+        run: git diff
+
+      - name: show current branch
+        run: echo "$(git branch --show-current)"
+        
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
