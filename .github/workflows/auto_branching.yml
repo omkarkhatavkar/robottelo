@@ -73,7 +73,7 @@ jobs:
             rm -rf ./github/workflows/dispatch_release.yml
 
       - name: print the git diff
-        id: print the git diff
+        id: git-diff
         run: |
           "git config --local user.email Satellite-QE.satqe.com && git config --local user.name Satellite-QE"
           "git diff"
