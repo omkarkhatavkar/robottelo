@@ -38,12 +38,12 @@ jobs:
       - name: Update target branch label in dependabot yml file
         id: update-dependabot
         run: |
-            # Read the dependabot.yaml file
+            # Read the dependabot.yml file
             FILE_PATH="./.github/dependabot.yml"
             TARGET_BRANCH="${{ github.event.inputs.target_branch }}"
 
             # Append the target branch label to the labels node
-            awk -v target="$TARGET_BRANCH" '/^ *labels:/ {$0 = $0 "\n      - " target} 1' "$FILE_PATH" > temp.yaml && mv temp.yaml "$FILE_PATH"
+            awk -v target="'$TARGET_BRANCH'" '/^ *labels:/ {$0 = $0 "\n      - " target} 1' "$FILE_PATH" > temp.yml && mv temp.yml "$FILE_PATH"
 
       - name: Update repository URLs in requirements.txt
         id: update-repo-urls
