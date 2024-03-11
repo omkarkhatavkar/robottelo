@@ -12,13 +12,13 @@ on:
 
 jobs:
   auto-branching:
-    name: run this auto-branching on the ${{ github.event.inputs.target_branch }} branch
+    name: run this auto-branching on the master branch
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create the target branch
+      - name: Create the ${{ github.event.inputs.target_branch }} branch
         id: create-branch
         uses: peterjgrainger/action-create-branch@v2.2.0
         env:
@@ -26,7 +26,13 @@ jobs:
         with:
           branch: ${{ github.event.inputs.target_branch }}
 
-      - name: Create label for the target branch
+      - name: Switch to ${{ github.event.inputs.target_branch }} branch
+        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
+
+      - name: Checkout from ${{ github.event.inputs.target_branch }} branch for auto-branching changes
+        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
+
+      - name: Create label for the ${{ github.event.inputs.target_branch }} branch
         id: create-label
         run: |
             curl -X POST \
@@ -93,9 +99,6 @@ jobs:
           git config --local user.name "GitHub Action"
           git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
           git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
-          
-      - name: Switch to another branch
-        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
 
       - name: Create pull request
         run: |
