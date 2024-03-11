@@ -83,13 +83,19 @@ jobs:
               # Remove lines containing @pytest.mark.stream and save the changes to a temporary file
               grep -v '@pytest\.mark\.stream' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
             done
-      
+
       - name: Update version in setup.py
         run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
 
-
-      - name: print the git diff
-        id: git-diff
+      - name: Commit changes
         run: |
-          git diff
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
+          git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
