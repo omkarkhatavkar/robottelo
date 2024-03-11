@@ -74,7 +74,7 @@ jobs:
 
       - name: print the git diff
         id: print the git diff
-        run: | 
-            # Display the git diff
-            git diff
+        run: |
+          "git config --local user.email Satellite-QE.satqe.com && git config --local user.name Satellite-QE"
+          "git diff"
 
