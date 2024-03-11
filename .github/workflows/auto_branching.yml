@@ -12,7 +12,7 @@ on:
 
 jobs:
   auto-branching:
-    name: run this auto-branching on the master branch
+    name: run this auto-branching on the ${{ github.event.inputs.target_branch }} branch
     runs-on: ubuntu-latest
 
     steps:
@@ -93,10 +93,13 @@ jobs:
           git config --local user.name "GitHub Action"
           git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
           git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
+          
+      - name: Switch to another branch
+        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
 
       - name: Create pull request
         run: |
-          gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --head "$(git branch --show-current)" --base "master"
+          gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --head "$(git branch --show-current)" --base "${{ github.event.inputs.target_branch }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
