@@ -70,7 +70,19 @@ jobs:
       - name: Remove the dispatch release GHA
         id: remove-dispatch-release-gha
         run: |
-            rm -rf ./github/workflows/dispatch_release.yml
+            rm -rf ./.github/workflows/dispatch_release.yml
+
+      - name: Remove lines with @pytest.mark.stream
+        id: remove-mark-stream
+        run: |
+            # Define the folder path
+            FOLDER_PATH="./tests/foreman"
+
+            # Loop through files in the folder
+            for file in "$FOLDER_PATH"/*.py; do
+              # Remove lines containing @pytest.mark.stream and save the changes to a temporary file
+              grep -v '@pytest\.mark\.stream' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+            done
 
       - name: print the git diff
         id: git-diff
