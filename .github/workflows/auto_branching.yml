@@ -100,7 +100,7 @@ jobs:
           git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
           git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
           git remote -vvv
-          git push
+          git push origin 
 
       - name: git diff
         run: git diff
