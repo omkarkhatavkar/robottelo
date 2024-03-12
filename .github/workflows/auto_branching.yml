@@ -113,7 +113,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/*
+          git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin ${{steps.checkout-to-auto-branch.outputs.branch_name}}
