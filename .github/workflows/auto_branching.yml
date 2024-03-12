@@ -28,12 +28,12 @@ jobs:
 
       - name: Switch to ${{ github.event.inputs.target_branch }} branch
         run: |
-            branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
-            git checkout -b "$branch_name"
+            git checkout -b ${{ github.event.inputs.target_branch }}
 
       - name: Checkout from ${{ github.event.inputs.target_branch }} branch for auto-branching changes
-        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
-
+        run: |
+            branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
+            git checkout -b "$branch_name"
       - name: Create label for the ${{ github.event.inputs.target_branch }} branch
         id: create-label
         run: |
