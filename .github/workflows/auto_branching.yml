@@ -116,7 +116,7 @@ jobs:
 
       - name: Create pull request
         run: |
-          gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --head "${{steps.checkout-to-auto-branch.outputs.branch_name}}" --base "${{ github.event.inputs.target_branch }}"
+          gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --base "${{ github.event.inputs.target_branch }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
