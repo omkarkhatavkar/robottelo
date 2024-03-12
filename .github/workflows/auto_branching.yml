@@ -109,6 +109,7 @@ jobs:
         with:
           commit-message: Testing the Auto-branching with ${{ github.event.inputs.target_branch }}
           branch: ${{steps.switch-to-branch.outputs.my_var}}
+          base: ${{ github.event.inputs.target_branch }}
           delete-branch: true
           title: '[Example] Update report'
           draft: false
