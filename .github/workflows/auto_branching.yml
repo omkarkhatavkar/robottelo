@@ -11,8 +11,8 @@ on:
 
 
 jobs:
-  auto-branching:
-    name: run this auto-branching on the master branch
+  auto-branching-non-master:
+    name: run these auto-branching steps and raise PR on the ${{ github.event.inputs.target_branch }} branch
     runs-on: ubuntu-latest
 
     steps:
@@ -26,6 +26,15 @@ jobs:
         with:
           branch: ${{ github.event.inputs.target_branch }}
 
+      - name: Create label for the ${{ github.event.inputs.target_branch }} branch
+        id: create-label
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/labels \
+            -d "{\"name\":\"${{ github.event.inputs.target_branch }}\",\"color\":\"fbca04\"}"
+
       - name: Switch to ${{ github.event.inputs.target_branch }} branch
         run: git checkout -b "${{ github.event.inputs.target_branch }}"
 
@@ -35,15 +44,6 @@ jobs:
             branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
             git checkout -b "$branch_name"
             echo "branch_name=$branch_name" >> $GITHUB_OUTPUT   
-
-      - name: Create label for the ${{ github.event.inputs.target_branch }} branch
-        id: create-label
-        run: |
-            curl -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              https://api.github.com/repos/${{ github.repository }}/labels \
-              -d "{\"name\":\"${{ github.event.inputs.target_branch }}\",\"color\":\"fbca04\"}"
 
       - name: Update target branch label in dependabot yml file
         id: update-dependabot
@@ -81,6 +81,7 @@ jobs:
         id: remove-dispatch-release-gha
         run: |
             rm -rf ./.github/workflows/dispatch_release.yml
+            rm -rf ./.github/workflows/auto_branching.yml
 
       - name: Remove lines with @pytest.mark.stream
         id: remove-mark-stream
@@ -92,11 +93,20 @@ jobs:
 
       - name: Update version in setup.py
         run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
-      
-      - name: git status 
+
+      - name: Update the Constants in __init__.py file
+        run: |
+          old_url="'https://raw.githubusercontent.com/SatelliteQE/robottelo/master/tests/foreman/data/uri.sh'"
+          new_url="'https://raw.githubusercontent.com/SatelliteQE/robottelo/6.15.z/tests/foreman/data/uri.sh'"
+          FILE_PATH="./robottelo/constants/__init__.py"
+          
+          awk '/SAT_NON_GA_VERSIONS =/ { sub(/\[[^,]*, /, "[", $0) } 1' "$FILE_PATH" > temp && mv temp "$FILE_PATH"
+          sed -i.bak "s|${old_url}|${new_url}|" "$FILE_PATH"
+
+      - name: git status
         run: git status
 
-      - name: git diff 
+      - name: git diff
         run: git diff
 
       - name: Commit changes
@@ -104,14 +114,26 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
-          git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
+          git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin ${{steps.checkout-to-auto-branch.outputs.branch_name}}
 
-
       - name: Create pull request
         run: |
-          gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --base "${{ github.event.inputs.target_branch }}"
+          title="Changes for ${{ github.event.inputs.target_branch }} new branch" 
+          body="
+            ### Problem Statement
+            New ${{ github.event.inputs.target_branch }} branch 
+            
+            ### Solution
+            - Dependabot labels are updated for new branch
+            - Removed dispatch release GHA from ${{ github.event.inputs.target_branch }} as we are releasing only master changes
+            - Airgun and Nailgun Requirements uses ${{ github.event.inputs.target_branch }} branch
+            - Constants are using new version now
+            - Stream tests removed
+            - Setup.py uses new version
+          "
+          gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
