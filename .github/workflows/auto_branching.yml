@@ -91,6 +91,9 @@ jobs:
       - name: Update version in setup.py
         run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
 
+      - name: git status
+        run: git status
+
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
@@ -98,9 +101,6 @@ jobs:
           git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
           git commit -m "Testing the Auto-branching with ${{ github.event.inputs.target_branch }}"
       
-      - name: git status
-        run: git status
-
       - name: Create pull request
         run: |
           gh pr create --title "Update version to 6.16.z" --body "Automated pull request to update version number" --head "$(git branch --show-current)" --base "${{ github.event.inputs.target_branch }}"
