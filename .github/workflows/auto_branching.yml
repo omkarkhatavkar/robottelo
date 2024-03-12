@@ -173,8 +173,8 @@ jobs:
           non_ga_versions="['$old_stream_version', '$new_stream_version']"
           FILE_PATH="./robottelo/constants/__init__.py"
           # update the version
-          sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$file_path"
-          sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$file_path"
+          sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$FILE_PATH"
+          sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$FILE_PATH"
 
       - name: git status
         run: git status
