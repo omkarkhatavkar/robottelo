@@ -26,13 +26,13 @@ jobs:
         with:
           branch: ${{ github.event.inputs.target_branch }}
 
-      - name: Checkout to ${{ github.event.inputs.target_branch }} branch
-        run: git checkout -b "${{ github.event.inputs.target_branch }}"
-
-      - name: Checkout from ${{ github.event.inputs.target_branch }} branch for auto-branching changes
-        run: | 
+      - name: Switch to ${{ github.event.inputs.target_branch }} branch
+        run: |
             branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
             git checkout -b "$branch_name"
+
+      - name: Checkout from ${{ github.event.inputs.target_branch }} branch for auto-branching changes
+        run: git checkout -b "auto-branching-${{ github.event.inputs.target_branch }}"
 
       - name: Create label for the ${{ github.event.inputs.target_branch }} branch
         id: create-label
@@ -83,24 +83,14 @@ jobs:
       - name: Remove lines with @pytest.mark.stream
         id: remove-mark-stream
         run: |
-            # Define the folder path
-            FOLDER_PATH="./tests/foreman"
-
-            # Loop through files in the folder
-            for file in "$FOLDER_PATH"/*.py; do
-              # Remove lines containing @pytest.mark.stream and save the changes to a temporary file
-              grep -v '@pytest\.mark\.stream' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
-            done
+           # Loop through files in the folder
+           grep -rl "tests/foreman" -e '@pytest\.mark\.stream' | while IFS= read -r file; do
+            awk '!/@pytest\.mark\.stream/' "$file" > temp && mv temp "$file"
+           done
 
       - name: Update version in setup.py
         run: sed -i "s/version=['\"][0-9.]*['\"]\+/version='${{ github.event.inputs.target_branch }}'/" setup.py
 
-      - name: git diff
-        run: git diff
-
-      - name: show current branch
-        run: echo "$(git branch --show-current)"
-        
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
