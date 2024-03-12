@@ -167,10 +167,10 @@ jobs:
 
       - name: Update the Constants in __init__.py file
         run: |
-          version = "${{ github.event.inputs.target_branch }}"
+          version="${{ github.event.inputs.target_branch }}"
           old_stream_version="${version%.z}"
           new_stream_version="${{ github.event.inputs.stream_version }}"
-          non_ga_versions = "['$old_stream_version', '$new_stream_version']"
+          non_ga_versions="['$old_stream_version', '$new_stream_version']"
           FILE_PATH="./robottelo/constants/__init__.py"
           # update the version
           sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$file_path"
@@ -186,6 +186,8 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
+          git checkout -b "$branch_name"
           git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
@@ -202,6 +204,6 @@ jobs:
             - Dependabot.yaml cherrypicks to ${{ github.event.inputs.target_branch }}
             - Robottelo conf and constants now uses ${{ github.event.inputs.stream_version }} and ${{ github.event.inputs.target_branch }} satellite versions 
           "
-          gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}"
+          gh pr create --title "$title" --body "$body" --base "master"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
