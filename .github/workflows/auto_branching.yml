@@ -156,7 +156,7 @@ jobs:
           
           # Append the target branch label to the labels node
           awk -v target="'$TARGET_BRANCH'" '/^ *labels:/ {$0 = $0 "\n      - " target} 1' "$FILE_PATH" > temp.yml && mv temp.yml "$FILE_PATH"
-          
+
       - name: Remove lines with @pytest.mark.stream
         id: remove-mark-stream
         run: |
@@ -170,7 +170,11 @@ jobs:
           version = "${{ github.event.inputs.target_branch }}"
           old_stream_version="${version%.z}"
           new_stream_version="${{ github.event.inputs.stream_version }}"
+          non_ga_versions = "['$old_stream_version', '$new_stream_version']"
           FILE_PATH="./robottelo/constants/__init__.py"
+          # update the version
+          sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$file_path"
+          sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$file_path"
 
       - name: git status
         run: git status
