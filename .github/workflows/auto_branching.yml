@@ -12,7 +12,7 @@ on:
 
 jobs:
   auto-branching-non-master:
-    name: run these auto-branching steps and raise PR on the ${{ github.event.inputs.target_branch }} branch
+    name: ${{ github.event.inputs.target_branch }} - raise PR with changes
     runs-on: ubuntu-latest
 
     steps:
@@ -113,7 +113,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/dependabot.yml
+          git add setup.py ./tests/foreman ./.github/workflows/dispatch_release.yml ./requirements.txt ./.github/*
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin ${{steps.checkout-to-auto-branch.outputs.branch_name}}
