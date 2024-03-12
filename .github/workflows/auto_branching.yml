@@ -105,6 +105,7 @@ jobs:
           
           awk '/SAT_NON_GA_VERSIONS =/ { sub(/\[[^,]*, /, "[", $0) } 1' "$FILE_PATH" > temp && mv temp "$FILE_PATH"
           sed -i.bak "s|${old_url}|${new_url}|" "$FILE_PATH"
+          rm "$FILE_PATH.bak"
 
       - name: git status
         run: git status
@@ -175,6 +176,7 @@ jobs:
           # update the version
           sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$FILE_PATH"
           sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$FILE_PATH"
+          rm "$FILE_PATH.bak"
 
       - name: git status
         run: git status
@@ -191,7 +193,7 @@ jobs:
           git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
-          git push origin ${{steps.checkout-to-auto-branch.outputs.branch_name}}
+          git push origin "$branch_name"
 
       - name: Create pull request
         run: |
