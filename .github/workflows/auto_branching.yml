@@ -123,7 +123,7 @@ jobs:
 
       - name: Create pull request
         run: |
-          title="Changes for ${{ github.event.inputs.target_branch }} new branch" 
+          title="[${{ github.event.inputs.target_branch }}]: Changes for ${{ github.event.inputs.target_branch }} new branch" 
           body="
             ### Problem Statement
             New ${{ github.event.inputs.target_branch }} branch 
@@ -200,7 +200,7 @@ jobs:
 
       - name: Create pull request
         run: |
-          title="Changes for ${{ github.event.inputs.target_branch }} new branch" 
+          title="[master]: Changes for ${{ github.event.inputs.target_branch }} new branch" 
           body="
             ### Problem Statement
             New ${{ github.event.inputs.target_branch }} downstream and master points to stream that is ${{ github.event.inputs.stream_version }}
