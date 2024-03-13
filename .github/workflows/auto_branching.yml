@@ -193,7 +193,7 @@ jobs:
           git config --local user.name "GitHub Action"
           branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
           git checkout -b "$branch_name"
-          git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
+          git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/* ./conf/robottelo.yaml.template
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin "$branch_name"
