@@ -11,6 +11,9 @@ on:
       stream_version:
         type: string
         description: new stream version of satellite
+      ga_version:
+        type: string
+        description: the released ga version of satellite
 
 
 jobs:
@@ -169,6 +172,7 @@ jobs:
       - name: Update the Constants in __init__.py file
         run: |
           version="${{ github.event.inputs.target_branch }}"
+          ga_version = "${{ github.event.inputs.ga_version }}"
           old_stream_version="${version%.z}"
           new_stream_version="${{ github.event.inputs.stream_version }}"
           non_ga_versions="['$old_stream_version', '$new_stream_version']"
@@ -176,7 +180,7 @@ jobs:
           
           # update the version
           sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$FILE_PATH"
-          sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" ./conf/robottelo.yaml.template
+          sed -i.bak "s/SATELLITE_VERSION = \"$ga_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" ./conf/robottelo.yaml.template
           
           sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$FILE_PATH"
           rm "$FILE_PATH.bak" "./conf/robottelo.yaml.template.bak"
@@ -193,7 +197,7 @@ jobs:
           git config --local user.name "GitHub Action"
           branch_name="auto-branching-${{ github.event.inputs.target_branch }}-$(date '+%s')"
           git checkout -b "$branch_name"
-          git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/* ./conf/robottelo.yaml.template
+          git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin "$branch_name"
