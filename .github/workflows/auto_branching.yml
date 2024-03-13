@@ -11,10 +11,6 @@ on:
       stream_version:
         type: string
         description: new stream version of satellite
-      ga_version:
-        type: string
-        description: the released ga version of satellite
-
 
 jobs:
   auto-branching-non-master:
@@ -180,7 +176,7 @@ jobs:
           
           # update the version
           sed -i.bak "s/SATELLITE_VERSION = \"$old_stream_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" "$FILE_PATH"
-          sed -i.bak "s/SATELLITE_VERSION = \"$ga_version\"/SATELLITE_VERSION = \"$new_stream_version\"/" ./conf/robottelo.yaml.template
+          sed -i.bak "s/  SATELLITE_VERSION: \"$old_stream_version\"/  SATELLITE_VERSION: \"$new_stream_version\"/" ./conf/robottelo.yaml.template
           
           sed -i.bak "s/SAT_NON_GA_VERSIONS = \[.*\]/SAT_NON_GA_VERSIONS = $non_ga_versions/" "$FILE_PATH"
           rm "$FILE_PATH.bak" "./conf/robottelo.yaml.template.bak"
