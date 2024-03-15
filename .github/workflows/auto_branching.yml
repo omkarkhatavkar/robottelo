@@ -137,10 +137,9 @@ jobs:
             - Stream tests removed
             - Setup.py uses new version
           "
-          gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}" > /tmp/pr_info.txt
-          cat /tmp/pr_info.txt
-          PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' /tmp/pr_info.txt)
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          pr_number=$(gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}" | awk -F'/' '{print $NF}')
+          echo "$pr_number"
+          echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -223,10 +222,9 @@ jobs:
             - Dependabot.yaml cherrypicks to ${{ github.event.inputs.target_branch }}
             - Robottelo conf and constants now uses ${{ github.event.inputs.stream_version }} and ${{ github.event.inputs.target_branch }} satellite versions
           "
-          gh pr create --title "$title" --body "$body" --base "master" > /tmp/pr_info.txt
-          cat /tmp/pr_info.txt
-          PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' /tmp/pr_info.txt)
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          pr_number=$(gh pr create --title "$title" --body "$body" --base master | sed 's/.*\///')
+          echo "$pr_number"
+          echo "pr_number=$pr_number" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
