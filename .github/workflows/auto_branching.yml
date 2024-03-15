@@ -137,21 +137,21 @@ jobs:
             - Stream tests removed
             - Setup.py uses new version
           "
-          gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}" 
-          # > pr_info.txt
-      #     PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' pr_info.txt)
-      #     echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh pr create --title "$title" --body "$body" --base "${{ github.event.inputs.target_branch }}" > /tmp/pr_info.txt
+          cat /tmp/pr_info.txt
+          PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' /tmp/pr_info.txt)
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Add the prt comment for running the sanity tests
-      #   id: add-parent-prt-comment
-      #   uses: thollander/actions-comment-pull-request@v2
-      #   with:
-      #     message: |
-      #       trigger: test-robottelo
-      #     pr_number: ${{ steps.create_pr.outputs.pr_number }}
-      #     GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
+      - name: Add the prt comment for running the sanity tests
+        id: add-parent-prt-comment
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            trigger: test-robottelo
+          pr_number: ${{ steps.create_pr.outputs.pr_number }}
+          GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
 
   auto-branching-master:
     name: master - raise PR with changes
@@ -223,18 +223,18 @@ jobs:
             - Dependabot.yaml cherrypicks to ${{ github.event.inputs.target_branch }}
             - Robottelo conf and constants now uses ${{ github.event.inputs.stream_version }} and ${{ github.event.inputs.target_branch }} satellite versions
           "
-          gh pr create --title "$title" --body "$body" --base "master" 
-          # > pr_info.txt
-          # PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' pr_info.txt)
-          # echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          gh pr create --title "$title" --body "$body" --base "master" > /tmp/pr_info.txt
+          cat /tmp/pr_info.txt
+          PR_NUMBER=$(grep -oP '(?<=number": ).*(?=,)' /tmp/pr_info.txt)
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Add the prt comment for running the sanity tests
-      #   id: add-parent-prt-comment
-      #   uses: thollander/actions-comment-pull-request@v2
-      #   with:
-      #     message: |
-      #       trigger: test-robottelo
-      #     pr_number: ${{ steps.create_pr.outputs.pr_number }}
-      #     GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
+      - name: Add the prt comment for running the sanity tests
+        id: add-parent-prt-comment
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            trigger: test-robottelo
+          pr_number: ${{ steps.create_pr.outputs.pr_number }}
+          GITHUB_TOKEN: ${{ secrets.CHERRYPICK_PAT }}
