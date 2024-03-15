@@ -65,8 +65,8 @@ jobs:
 
             # Define the replacement strings
             replacements=(
-              "airgun @ git+https://github.com/SatelliteQE/airgun.git@master#egg=airgun|airgun @ git+https://github.com/SatelliteQE/airgun.git@{{ github.event.inputs.target_branch }}#egg=airgun"
-              "nailgun @ git+https://github.com/SatelliteQE/nailgun.git@master#egg=nailgun|nailgun @ git+https://github.com/SatelliteQE/nailgun.git@{{ github.event.inputs.target_branch }}#egg=nailgun"
+              "airgun @ git+https://github.com/SatelliteQE/airgun.git@master#egg=airgun|airgun @ git+https://github.com/SatelliteQE/airgun.git@${{ github.event.inputs.target_branch }}#egg=airgun"
+              "nailgun @ git+https://github.com/SatelliteQE/nailgun.git@master#egg=nailgun|nailgun @ git+https://github.com/SatelliteQE/nailgun.git@${{ github.event.inputs.target_branch }}#egg=nailgun"
             )
 
             # Create a temporary file
@@ -117,7 +117,6 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add setup.py ./tests/foreman ./robottelo/* ./requirements.txt ./.github/*
-          git status 
           git commit -m "Changes for ${{ github.event.inputs.target_branch }} new branch"
           git remote -vvv
           git push origin ${{steps.checkout-to-auto-branch.outputs.branch_name}}
