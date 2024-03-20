@@ -179,7 +179,7 @@ jobs:
           TOKEN=${{ secrets.CHERRYPICK_PAT }}
           OWNER=${{ github.repository_owner }}
           REPO=${{ github.event.repository.name }}
-          BRANCH="main" # Adjust branch name as needed
+          BRANCH="${{ github.event.inputs.target_branch }}" # Adjust branch name as needed
           # Branch protection payload
           PROTECTION_PAYLOAD='{
             "required_status_checks": {
@@ -207,7 +207,7 @@ jobs:
           else
             echo "Failed to update branch protection. HTTP status code: $PROTECTION_RESPONSE"
             echo "protection-outcome=failure" >> "$GITHUB_OUTPUT"
-            exit 0
+            exit 1
           fi
 
   auto-branching-master:
