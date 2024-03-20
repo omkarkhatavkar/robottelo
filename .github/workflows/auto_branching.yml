@@ -26,10 +26,11 @@ jobs:
 
           if [[ $(echo "$MEMBER" | jq -r '.state') == "active" ]]; then
             echo "User is a member of satellite-admin group."
-            echo "::set-output name=member::true"
+            echo "{member}=true" >> $GITHUB_OUTPUT
           else
             echo "User is not a member of satellite-admin group."
-            echo "::set-output name=member::false"
+            echo "{member}=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
   auto-branching-non-master:
