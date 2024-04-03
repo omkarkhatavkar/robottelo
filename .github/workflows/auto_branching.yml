@@ -24,7 +24,7 @@ jobs:
         run: |
           # Use GitHub API to check if the user triggering the workflow is a member of satellite-admin group
           MEMBER=$(curl -s -H "Authorization: token ${{ secrets.CHERRYPICK_PAT }}" \
-              "https://api.github.com/orgs/satelliteQE/teams/repository-admins/memberships/${{ github.actor }}")
+              "https://api.github.com/orgs/satelliteQE/teams/quality-engineers/memberships/${{ github.actor }}")
           if [[ $(echo "$MEMBER" | jq -r '.state') == "active" ]]; then
             echo "User is a member of satellite-admin group."
             echo "member=true" >> $GITHUB_OUTPUT
