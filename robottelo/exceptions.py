@@ -9,14 +9,6 @@ class TemplateNotFoundError(Exception):
     """An exception to raise when Template is not available in Satellite"""
 
 
-class ImproperlyConfigured(Exception):
-    """Indicates that Robottelo somehow is improperly configured.
-
-    For example, if settings file can not be found or some required
-    configuration is not defined.
-    """
-
-
 class InvalidVaultURLForOIDC(Exception):
     """Raised if the vault doesnt allows OIDC login"""
 
@@ -107,9 +99,7 @@ class CLIBaseError(Exception):
 
     def __repr__(self):
         """Include class name status, stderr and msg to improve logging"""
-        return '{}(status={!r}, stderr={!r}, msg={!r}'.format(
-            type(self).__name__, self.status, self.stderr, self.msg
-        )
+        return f'{type(self).__name__}(status={self.status!r}, stderr={self.stderr!r}, msg={self.msg!r}'
 
 
 class CLIReturnCodeError(CLIBaseError):

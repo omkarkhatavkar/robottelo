@@ -11,17 +11,24 @@
 :CaseImportance: High
 
 """
+
 import pytest
 
 from robottelo import constants
 from robottelo.config import settings
-from robottelo.hosts import Satellite
+from robottelo.hosts import Satellite, get_sat_rhel_version
 
 SSH_PASS = settings.server.ssh_password
 pytestmark = pytest.mark.destructive
 
 
+@pytest.mark.pit_server
 @pytest.mark.e2e
+@pytest.mark.parametrize(
+    "sat_ready_rhel",
+    [8, 9] if get_sat_rhel_version().major < 9 else [9],
+    indirect=True,
+)
 @pytest.mark.parametrize('backup_type', ['online', 'offline'])
 @pytest.mark.parametrize('skip_pulp', [False, True], ids=['include_pulp', 'skip_pulp'])
 def test_positive_clone_backup(
@@ -43,6 +50,8 @@ def test_positive_clone_backup(
     :parametrized: yes
 
     :BZ: 2142514, 2013776
+
+    :Verifies: SAT-10789
 
     :customerscenario: true
     """
@@ -89,8 +98,8 @@ def test_positive_clone_backup(
     # Enabling repositories
     for repo in getattr(constants, f"OHSNAP_RHEL{rhel_version}_REPOS"):
         sat_ready_rhel.enable_repo(repo, force=True)
-    # Enabling satellite module
-    sat_ready_rhel.install_satellite_or_capsule_package()
+    # Enabling satellite module for RHEL8
+    sat_ready_rhel.enable_satellite_or_capsule_module_for_rhel8()
     # Install satellite-clone
     assert sat_ready_rhel.execute('yum install satellite-clone -y').status == 0
     # Disabling CDN repos as we install from dogfdood
@@ -124,7 +133,6 @@ def test_positive_clone_backup(
     )
 
 
-@pytest.mark.pit_server
 def test_positive_list_tasks(target_sat):
     """Test that satellite-clone --list-tasks command doesn't fail.
 

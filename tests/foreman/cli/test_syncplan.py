@@ -11,11 +11,11 @@
 :CaseImportance: High
 
 """
+
 from datetime import datetime, timedelta
 from time import sleep
 
 from fauxfactory import gen_string
-from nailgun import entities
 import pytest
 
 from robottelo.constants import PRDS, REPOS, REPOSET
@@ -239,7 +239,7 @@ def test_positive_update_interval(module_org, test_data, request, target_sat):
             'organization-id': module_org.id,
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     target_sat.cli.SyncPlan.update(
         {'id': new_sync_plan['id'], 'interval': test_data['new-interval']}
@@ -271,7 +271,7 @@ def test_positive_update_sync_date(module_org, request, target_sat):
             'organization-id': module_org.id,
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Assert that sync date matches data passed
     assert new_sync_plan['start-date'] == today.strftime("%Y/%m/%d %H:%M:%S")
@@ -287,6 +287,38 @@ def test_positive_update_sync_date(module_org, request, target_sat):
     assert datetime.strptime(result['start-date'], '%Y/%m/%d %H:%M:%S') > datetime.strptime(
         new_sync_plan['start-date'], '%Y/%m/%d %H:%M:%S'
     ), 'Sync date was not updated'
+
+
+@pytest.mark.tier1
+@pytest.mark.upgrade
+def test_positive_create_sync_date_custom_timezone(module_org, request, target_sat):
+    """Check if syncplan sync date accepts supplied timezone
+
+    :id: 9b5f421d-b925-4ea6-9000-e69ed5e35640
+
+    :expectedresults: Sync plan is created with correct start date
+
+    :BZ: 2015344
+
+    :customerscenario: true
+
+    :CaseImportance: High
+    """
+    future_date = datetime.now() + timedelta(days=5)
+    format = '%Y-%m-%d %H:%M:%S CEST'
+    sync_plan_name = gen_string('alphanumeric')
+    new_sync_plan = target_sat.cli_factory.sync_plan(
+        {
+            'name': sync_plan_name,
+            'sync-date': future_date.strftime(format),
+            'organization-id': module_org.id,
+        }
+    )
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
+    expected_date = future_date + timedelta(hours=4)
+    # Assert that sync date was converted to UTC correctly
+    assert new_sync_plan['start-date'] == expected_date.strftime("%Y/%m/%d %H:%M:%S")
 
 
 @pytest.mark.parametrize('name', **parametrized(valid_data_list()))
@@ -322,7 +354,7 @@ def test_positive_info_enabled_field_is_displayed(module_org, request, target_sa
     :CaseImportance: Critical
     """
     new_sync_plan = target_sat.cli_factory.sync_plan({'organization-id': module_org.id})
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     result = target_sat.cli.SyncPlan.info({'id': new_sync_plan['id']})
     assert result.get('enabled') is not None
@@ -385,7 +417,7 @@ def test_negative_synchronize_custom_product_past_sync_date(module_org, request,
             'sync-date': datetime.utcnow().strftime(SYNC_DATE_FMT),
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     product = target_sat.cli_factory.make_product({'organization-id': module_org.id})
     repo = target_sat.cli_factory.make_repository({'product-id': product['id']})
@@ -421,7 +453,7 @@ def test_positive_synchronize_custom_product_past_sync_date(module_org, request,
             ),
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Associate sync plan with product
     target_sat.cli.Product.set_sync_plan({'id': product['id'], 'sync-plan-id': new_sync_plan['id']})
@@ -476,7 +508,7 @@ def test_positive_synchronize_custom_product_future_sync_date(module_org, reques
             'cron-expression': [f'*/{cron_multiple} * * * *'],
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Verify product is not synced and doesn't have any content
     validate_repo_content(target_sat, repo, ['errata', 'packages'], after_sync=False)
@@ -539,7 +571,7 @@ def test_positive_synchronize_custom_products_future_sync_date(module_org, reque
             'cron-expression': [f'*/{cron_multiple} * * * *'],
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Verify products have not been synced yet
     logger.info(
@@ -580,7 +612,7 @@ def test_positive_synchronize_custom_products_future_sync_date(module_org, reque
 @pytest.mark.tier4
 @pytest.mark.upgrade
 def test_positive_synchronize_rh_product_past_sync_date(
-    target_sat, function_entitlement_manifest_org, request
+    target_sat, function_sca_manifest_org, request
 ):
     """Create a sync plan with past datetime as a sync date, add a
     RH product and verify the product gets synchronized on the next sync
@@ -594,7 +626,7 @@ def test_positive_synchronize_rh_product_past_sync_date(
     """
     interval = 60 * 60  # 'hourly' sync interval in seconds
     delay = 2 * 60
-    org = function_entitlement_manifest_org
+    org = function_sca_manifest_org
     target_sat.cli.RepositorySet.enable(
         {
             'name': REPOSET['rhva6'],
@@ -618,7 +650,7 @@ def test_positive_synchronize_rh_product_past_sync_date(
             ),
         }
     )
-    sync_plan = entities.SyncPlan(organization=org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Associate sync plan with product
     target_sat.cli.Product.set_sync_plan({'id': product['id'], 'sync-plan-id': new_sync_plan['id']})
@@ -647,7 +679,7 @@ def test_positive_synchronize_rh_product_past_sync_date(
 @pytest.mark.tier4
 @pytest.mark.upgrade
 def test_positive_synchronize_rh_product_future_sync_date(
-    target_sat, function_entitlement_manifest_org, request
+    target_sat, function_sca_manifest_org, request
 ):
     """Create a sync plan with sync date in a future and sync one RH
     product with it automatically.
@@ -661,7 +693,7 @@ def test_positive_synchronize_rh_product_future_sync_date(
     cron_multiple = 5  # sync event is on every multiple of this value, starting from 00 mins
     delay = (cron_multiple) * 60  # delay for sync date in seconds
     guardtime = 180  # do not start test less than 2 mins before the next sync event
-    org = function_entitlement_manifest_org
+    org = function_sca_manifest_org
     target_sat.cli.RepositorySet.enable(
         {
             'name': REPOSET['rhva6'],
@@ -688,7 +720,7 @@ def test_positive_synchronize_rh_product_future_sync_date(
             'cron-expression': [f'*/{cron_multiple} * * * *'],
         }
     )
-    sync_plan = entities.SyncPlan(organization=org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Verify product is not synced and doesn't have any content
     with pytest.raises(AssertionError):
@@ -740,7 +772,7 @@ def test_positive_synchronize_custom_product_daily_recurrence(module_org, reques
             'sync-date': start_date.strftime(SYNC_DATE_FMT),
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Associate sync plan with product
     target_sat.cli.Product.set_sync_plan({'id': product['id'], 'sync-plan-id': new_sync_plan['id']})
@@ -789,7 +821,7 @@ def test_positive_synchronize_custom_product_weekly_recurrence(module_org, reque
             'sync-date': start_date.strftime(SYNC_DATE_FMT),
         }
     )
-    sync_plan = entities.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
+    sync_plan = target_sat.api.SyncPlan(organization=module_org.id, id=new_sync_plan['id']).read()
     request.addfinalizer(lambda: target_sat.api_factory.disable_syncplan(sync_plan))
     # Associate sync plan with product
     target_sat.cli.Product.set_sync_plan({'id': product['id'], 'sync-plan-id': new_sync_plan['id']})

@@ -37,6 +37,7 @@ from robottelo.constants import (
     FAKE_FILE_NEW_NAME,
     KICKSTART_CONTENT,
     PRDS,
+    PULP_ARTIFACT_DIR,
     REPOS,
     REPOSET,
     RH_CONTAINER_REGISTRY_HUB,
@@ -50,7 +51,6 @@ from robottelo.content_info import (
     get_repomd_revision,
 )
 from robottelo.utils.datafactory import gen_string
-from robottelo.utils.issue_handlers import is_open
 
 
 @pytest.fixture
@@ -635,9 +635,9 @@ class TestCapsuleContentManagement:
         assert len(caps_files) == packages_count
 
         # Download a package from the Capsule and get its md5 checksum
-        published_package_md5 = target_sat.md5_by_url(f'{caps_repo_url}/{package}')
+        published_package_md5 = target_sat.checksum_by_url(f'{caps_repo_url}/{package}')
         # Get md5 checksum of source package
-        package_md5 = target_sat.md5_by_url(f'{repo_url}/{package}')
+        package_md5 = target_sat.checksum_by_url(f'{repo_url}/{package}')
         # Assert checksums are matching
         assert package_md5 == published_package_md5
 
@@ -847,8 +847,10 @@ class TestCapsuleContentManagement:
 
         # Check kickstart specific files
         for file in KICKSTART_CONTENT:
-            sat_file = target_sat.md5_by_url(f'{target_sat.url}/{url_base}/{file}')
-            caps_file = target_sat.md5_by_url(f'{module_capsule_configured.url}/{url_base}/{file}')
+            sat_file = target_sat.checksum_by_url(f'{target_sat.url}/{url_base}/{file}')
+            caps_file = target_sat.checksum_by_url(
+                f'{module_capsule_configured.url}/{url_base}/{file}'
+            )
             assert sat_file == caps_file
 
         # Check packages
@@ -866,7 +868,7 @@ class TestCapsuleContentManagement:
         self,
         target_sat,
         module_capsule_configured,
-        container_contenthost,
+        module_container_contenthost,
         function_org,
         function_product,
         function_lce,
@@ -943,54 +945,53 @@ class TestCapsuleContentManagement:
         ]
 
         for con_client in CONTAINER_CLIENTS:
-            result = container_contenthost.execute(
+            result = module_container_contenthost.execute(
                 f'{con_client} login -u {settings.server.admin_username}'
                 f' -p {settings.server.admin_password} {module_capsule_configured.hostname}'
             )
             assert result.status == 0
 
             for path in repo_paths:
-                result = container_contenthost.execute(
+                result = module_container_contenthost.execute(
                     f'{con_client} search {module_capsule_configured.hostname}/{path}'
                 )
                 assert result.status == 0
 
-                result = container_contenthost.execute(
+                result = module_container_contenthost.execute(
                     f'{con_client} pull {module_capsule_configured.hostname}/{path}'
                 )
                 assert result.status == 0
 
-                result = container_contenthost.execute(
+                result = module_container_contenthost.execute(
                     f'{con_client} rmi {module_capsule_configured.hostname}/{path}'
                 )
                 assert result.status == 0
 
-            result = container_contenthost.execute(
+            result = module_container_contenthost.execute(
                 f'{con_client} logout {module_capsule_configured.hostname}'
             )
             assert result.status == 0
 
         # Inspect the images with skopeo (BZ#2148813)
-        if not is_open('BZ:2148813'):
-            result = module_capsule_configured.execute('yum -y install skopeo')
+        result = module_capsule_configured.execute('yum -y install skopeo')
+        assert result.status == 0
+
+        target_sat.api.LifecycleEnvironment(
+            id=function_lce.id, registry_unauthenticated_pull='true'
+        ).update(['registry_unauthenticated_pull'])
+
+        sleep(20)
+
+        skopeo_cmd = 'skopeo --debug inspect docker://'
+        for path in repo_paths:
+            result = module_capsule_configured.execute(
+                f'{skopeo_cmd}{target_sat.hostname}/{path}:latest'
+            )
             assert result.status == 0
-
-            target_sat.api.LifecycleEnvironment(
-                id=function_lce.id, registry_unauthenticated_pull='true'
-            ).update(['registry_unauthenticated_pull'])
-
-            sleep(20)
-
-            skopeo_cmd = 'skopeo --debug inspect docker://'
-            for path in repo_paths:
-                result = module_capsule_configured.execute(
-                    f'{skopeo_cmd}{target_sat.hostname}/{path}:latest'
-                )
-                assert result.status == 0
-                result = module_capsule_configured.execute(
-                    f'{skopeo_cmd}{module_capsule_configured.hostname}/{path}:latest'
-                )
-                assert result.status == 0
+            result = module_capsule_configured.execute(
+                f'{skopeo_cmd}{module_capsule_configured.hostname}/{path}:latest'
+            )
+            assert result.status == 0
 
     @pytest.mark.tier4
     @pytest.mark.skip_if_not_set('capsule')
@@ -1162,8 +1163,8 @@ class TestCapsuleContentManagement:
         assert sat_files == caps_files
 
         for file in sat_files:
-            sat_file = target_sat.md5_by_url(f'{sat_repo_url}{file}')
-            caps_file = target_sat.md5_by_url(f'{caps_repo_url}{file}')
+            sat_file = target_sat.checksum_by_url(f'{sat_repo_url}{file}')
+            caps_file = target_sat.checksum_by_url(f'{caps_repo_url}{file}')
             assert sat_file == caps_file
 
     @pytest.mark.tier4
@@ -1370,9 +1371,7 @@ class TestCapsuleContentManagement:
         assert sync_status['result'] == 'success', 'Capsule sync task failed.'
 
         # Ensure the RPM artifacts were created.
-        result = capsule_configured.execute(
-            'ls /var/lib/pulp/media/artifact/*/* | xargs file | grep RPM'
-        )
+        result = capsule_configured.execute(f'ls {PULP_ARTIFACT_DIR}*/* | xargs file | grep RPM')
         assert not result.status, 'RPM artifacts are missing after capsule sync.'
 
         # Remove the Library LCE from the capsule and resync it.
@@ -1401,9 +1400,7 @@ class TestCapsuleContentManagement:
         )
 
         # Ensure the artifacts were removed.
-        result = capsule_configured.execute(
-            'ls /var/lib/pulp/media/artifact/*/* | xargs file | grep RPM'
-        )
+        result = capsule_configured.execute(f'ls {PULP_ARTIFACT_DIR}*/* | xargs file | grep RPM')
         assert result.status, 'RPM artifacts are still present. They should be gone.'
 
     @pytest.mark.skip_if_not_set('capsule')

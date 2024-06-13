@@ -63,7 +63,7 @@ from robottelo.utils.installer import InstallerCommand
 POWER_OPERATIONS = {
     VmState.RUNNING: 'running',
     VmState.STOPPED: 'stopped',
-    'reboot': 'reboot'
+    'reboot': 'reboot',
     # TODO paused, suspended, shelved?
 }
 
@@ -341,7 +341,7 @@ class ContentHost(Host, ContentHostMixins):
     def os_version(self):
         """Get host's OS version information
 
-        :returns: A ``packaging.version.Version`` instance
+        :return: A ``packaging.version.Version`` instance
         """
         return Version(self._os_release['VERSION_ID'])
 
@@ -438,7 +438,10 @@ class ContentHost(Host, ContentHostMixins):
         if ensure and state in [VmState.RUNNING, 'reboot']:
             try:
                 wait_for(
-                    self.connect, fail_condition=lambda res: res is not None, handle_exception=True
+                    self.connect,
+                    fail_condition=lambda res: res is not None,
+                    timeout=300,
+                    handle_exception=True,
                 )
             # really broad diaper here, but connection exceptions could be a ton of types
             except TimedOutError as toe:
@@ -471,7 +474,7 @@ class ContentHost(Host, ContentHostMixins):
             provided file will be saved in /tmp/ directory.
         :param str file_name: New name of the Downloaded file else its given from file_url
 
-        :returns: Returns list containing complete file path and name of downloaded file.
+        :return: Returns list containing complete file path and name of downloaded file.
         """
         file_name = PurePath(file_name or file_url).name
         local_path = PurePath(local_path or '/tmp') / file_name
@@ -795,6 +798,17 @@ class ContentHost(Host, ContentHostMixins):
         cmd = target.satellite.cli.HostRegistration.generate_command(options)
         return self.execute(cmd.strip('\n'))
 
+    def api_register(self, target, **kwargs):
+        """Register a content host using global registration through API.
+
+        :param target: Satellite or Capsule object to register to.
+        :param kwargs: Additional keyword arguments to pass to the API call.
+        :return: The result of the API call.
+        """
+        kwargs['insecure'] = kwargs.get('insecure', True)
+        command = target.satellite.api.RegistrationCommand(**kwargs).create()
+        return self.execute(command.strip('\n'))
+
     def register_contenthost(
         self,
         org='Default_Organization',
@@ -837,10 +851,7 @@ class ContentHost(Host, ContentHostMixins):
             registration.
         """
 
-        if username and password:
-            userpass = f' --username {username} --password {password}'
-        else:
-            userpass = ''
+        userpass = f' --username {username} --password {password}' if username and password else ''
         # Setup the base command
         cmd = 'subscription-manager register'
         if org:
@@ -883,12 +894,17 @@ class ContentHost(Host, ContentHostMixins):
         """Get a remote file from the broker virtual machine."""
         self.session.sftp_read(source=remote_path, destination=local_path)
 
-    def put(self, local_path, remote_path=None):
+    def put(self, local_path, remote_path=None, temp_file=False):
         """Put a local file to the broker virtual machine.
         If local_path is a manifest object, write its contents to a temporary file
         then continue with the upload.
         """
-        if 'utils.manifest' in str(local_path):
+        if temp_file:
+            with NamedTemporaryFile(dir=robottelo_tmp_dir) as content_file:
+                content_file.write(str.encode(local_path))
+                content_file.flush()
+                self.session.sftp_write(source=content_file.name, destination=remote_path)
+        elif 'utils.manifest' in str(local_path):
             with NamedTemporaryFile(dir=robottelo_tmp_dir) as content_file:
                 content_file.write(local_path.content.read())
                 content_file.flush()
@@ -932,11 +948,7 @@ class ContentHost(Host, ContentHostMixins):
         # ensure ssh directory exists
         self.execute(f'mkdir -p {ssh_path}')
         # append the key if doesn't exists
-        self.execute(
-            "grep -q '{key}' {dest} || echo '{key}' >> {dest}".format(
-                key=key_content, dest=auth_file
-            )
-        )
+        self.execute(f"grep -q '{key_content}' {auth_file} || echo '{key_content}' >> {auth_file}")
         # set proper permissions
         self.execute(f'chmod 700 {ssh_path}')
         self.execute(f'chmod 600 {auth_file}')
@@ -1482,7 +1494,7 @@ class ContentHost(Host, ContentHostMixins):
         """Check the provisioned host status by pinging the ip of host
 
         :param host: IP address or hostname of the provisioned host
-        :returns: None
+        :return: None
         :raises: : `HostPingFailed` if the host is not pingable
         """
         result = self.execute(
@@ -1739,8 +1751,8 @@ class Capsule(ContentHost, CapsuleMixins):
         self._cli._configured = True
         return self._cli
 
-    def install_satellite_or_capsule_package(self):
-        """Install Satellite/Capsule package.
+    def enable_satellite_or_capsule_module_for_rhel8(self):
+        """Enable Satellite/Capsule module for RHEL8.
         Note: Make sure required repos are enabled before using this.
         """
         if self.os_version.major == 8:
@@ -1750,6 +1762,12 @@ class Capsule(ContentHost, CapsuleMixins):
                 ).status
                 == 0
             )
+
+    def install_satellite_or_capsule_package(self):
+        """Install Satellite/Capsule package. Also handles module enablement for RHEL8.
+        Note: Make sure required repos are enabled before using this.
+        """
+        self.enable_satellite_or_capsule_module_for_rhel8()
         assert self.execute(f'dnf -y install {self.product_rpm_name}').status == 0
 
 
@@ -1864,9 +1882,27 @@ class Satellite(Capsule, SatelliteMixins):
 
     @contextmanager
     def omit_credentials(self):
-        self.omitting_credentials = True
+        change = not self.omitting_credentials  # if not already set to omit
+        if change:
+            self.omitting_credentials = True
+            # if CLI is already created
+            if self._cli._configured:
+                for name, obj in self._cli.__dict__.items():
+                    with contextlib.suppress(
+                        AttributeError
+                    ):  # not everything has an mro method, we don't care about them
+                        if Base in obj.mro():
+                            getattr(self._cli, name).omitting_credentials = True
         yield
-        self.omitting_credentials = False
+        if change:
+            self.omitting_credentials = False
+            if self._cli._configured:
+                for name, obj in self._cli.__dict__.items():
+                    with contextlib.suppress(
+                        AttributeError
+                    ):  # not everything has an mro method, we don't care about them
+                        if Base in obj.mro():
+                            getattr(self._cli, name).omitting_credentials = False
 
     @contextmanager
     def ui_session(self, testname=None, user=None, password=None, url=None, login=True):
@@ -1883,17 +1919,15 @@ class Satellite(Capsule, SatelliteMixins):
             return None
 
         try:
-            ui_session = Session(
+            with Session(
                 session_name=testname or get_caller(),
                 user=user or settings.server.admin_username,
                 password=password or settings.server.admin_password,
                 url=url,
                 hostname=self.hostname,
                 login=login,
-            )
-            yield ui_session
-        except Exception:
-            raise
+            ) as ui_session:
+                yield ui_session
         finally:
             if self.record_property is not None and settings.ui.record_video:
                 video_url = settings.ui.grid_url.replace(
@@ -2509,7 +2543,7 @@ class IPAHost(Host):
                 _, password = line.split(': ', 2)
                 break
         self.execute(f'ipa service-add HTTP/{self.satellite.hostname}')
-        _, domain = self.hostname.split('.', 1)
+        domain = self.execute('ipa realmdomains-show | awk \'{print $2}\'').stdout.strip()
         result = self.satellite.execute(
             f"ipa-client-install --password '{password}' "
             f'--domain {domain} '

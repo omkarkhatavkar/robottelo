@@ -11,8 +11,8 @@
 :CaseAutomation: Automated
 
 """
+
 from fauxfactory import gen_string
-from nailgun import entities
 import pytest
 
 from robottelo.config import settings
@@ -34,7 +34,7 @@ class TestOpenScap:
 
         :param scap_name: Scap title
 
-        :returns: scap_id and scap_profile_id
+        :return: scap_id and scap_profile_id
         """
         default_content = sat.cli.Scapcontent.info({'title': scap_name}, output_format='json')
         scap_id = default_content['id']
@@ -67,8 +67,7 @@ class TestOpenScap:
         :CaseImportance: Medium
         """
         scap_contents = [content['title'] for content in module_target_sat.cli.Scapcontent.list()]
-        for title in OSCAP_DEFAULT_CONTENT.values():
-            assert title in scap_contents
+        assert f'Red Hat rhel{module_target_sat.os_version.major} default content' in scap_contents
 
     @pytest.mark.tier1
     def test_negative_list_default_content_with_viewer_role(
@@ -295,7 +294,9 @@ class TestOpenScap:
     @pytest.mark.parametrize('name', **parametrized(invalid_names_list()))
     @pytest.mark.tier1
     def test_negative_create_scap_content_with_invalid_originalfile_name(
-        self, name, module_target_sat
+        self,
+        name,
+        module_target_sat,
     ):
         """Create scap-content with invalid original file name
 
@@ -354,7 +355,10 @@ class TestOpenScap:
             module_target_sat.cli_factory.scapcontent({'title': title})
 
     @pytest.mark.tier1
-    def test_positive_update_scap_content_with_newtitle(self, module_target_sat):
+    def test_positive_update_scap_content_with_newtitle(
+        self,
+        module_target_sat,
+    ):
         """Update scap content title
 
         :id: 2c32e94a-237d-40b9-8a3b-fca2ef26fe79
@@ -567,16 +571,26 @@ class TestOpenScap:
 
             1. Oscap should be enabled.
             2. Oscap-cli hammer plugin installed.
-            3. More than 1 hostgroups
+            3. More than 1 policies assigned to hostgroups
 
         :steps:
 
             1. Login to hammer shell.
             2. Execute "policy" command with "create" as sub-command.
             3. Pass valid parameters.
-            4. Associate multiple hostgroups with policy
+            4. Associate multiple policies with hostgroup
+            5. Delete hostgroup
 
         :expectedresults: The policy is created and associated successfully.
+            Policies can be listed after hostgroup removal.
+
+        :bz: 1728157
+
+        :Verifies: SAT-19502
+
+        :customerscenario: true
+
+        :Verifies: SAT-19492
 
         :CaseImportance: Medium
         """
@@ -594,6 +608,37 @@ class TestOpenScap:
             }
         )
         assert scap_policy['hostgroups'][0] == hostgroup['name']
+        name2 = gen_string('alphanumeric')
+        scap_policy2 = module_target_sat.cli_factory.make_scap_policy(
+            {
+                'name': name2,
+                'deploy-by': 'ansible',
+                'scap-content-id': scap_content["scap_id"],
+                'scap-content-profile-id': scap_content["scap_profile_id"],
+                'period': OSCAP_PERIOD['weekly'].lower(),
+                'weekday': OSCAP_WEEKDAY['friday'].lower(),
+                'hostgroups': hostgroup['name'],
+            }
+        )
+        assert scap_policy2['hostgroups'][0] == hostgroup['name']
+        module_target_sat.cli.HostGroup.delete({'id': hostgroup['id']})
+        # removal of hostgroup shouldn't affect policies
+        try:
+            result = module_target_sat.cli.Scappolicy.list()
+        except CLIReturnCodeError:
+            pytest.fail("failed to list policies")
+        assert name in [policy['name'] for policy in result]
+        # check for orphaned entries
+        db_out = module_target_sat.execute(
+            'sudo -u postgres psql -d foreman -c "select * from foreman_openscap_assets"'
+        )
+        assert db_out.status == 0
+        assert "(0 rows)" in db_out.stdout
+        db_out = module_target_sat.execute(
+            'sudo -u postgres psql -d foreman -c "select * from foreman_openscap_asset_policies"'
+        )
+        assert db_out.status == 0
+        assert "(0 rows)" in db_out.stdout
 
     @pytest.mark.tier2
     def test_positive_associate_scap_policy_with_hostgroup_via_ansible(
@@ -920,7 +965,8 @@ class TestOpenScap:
         )
         assert scap_policy['scap-content-id'] == scap_content["scap_id"]
         scap_id, scap_profile_id = self.fetch_scap_and_profile_id(
-            OSCAP_DEFAULT_CONTENT['rhel_firefox'], module_target_sat
+            OSCAP_DEFAULT_CONTENT[f'rhel{module_target_sat.os_version.major}_content'],
+            module_target_sat,
         )
         module_target_sat.cli.Scappolicy.update(
             {'name': name, 'scap-content-id': scap_id, 'scap-content-profile-id': scap_profile_id}
@@ -953,7 +999,7 @@ class TestOpenScap:
 
         :CaseImportance: Medium
         """
-        host = entities.Host()
+        host = module_target_sat.api.Host()
         host.create()
         name = gen_string('alpha')
         scap_policy = module_target_sat.cli_factory.make_scap_policy(

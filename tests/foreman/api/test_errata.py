@@ -11,6 +11,7 @@
 :CaseImportance: High
 
 """
+
 # For ease of use hc refers to host-collection throughout this document
 from time import sleep, time
 
@@ -122,8 +123,7 @@ def _validate_errata_counts(host, errata_type, expected_value, timeout=120):
         sleep(5)
     else:
         pytest.fail(
-            'Host {} contains {} {} errata, but expected to contain '
-            '{} of them'.format(
+            'Host {} contains {} {} errata, but expected to contain {} of them'.format(
                 host.name,
                 host.content_facet_attributes['errata_counts'][errata_type],
                 errata_type,
@@ -149,8 +149,7 @@ def _fetch_available_errata(host, expected_amount=None, timeout=120):
         errata = host.errata()
     else:
         pytest.fail(
-            'Host {} contains {} available errata, but expected to '
-            'contain {} of them'.format(
+            'Host {} contains {} available errata, but expected to contain {} of them'.format(
                 host.name,
                 len(errata['results']),
                 expected_amount if not None else 'No expected_amount provided',
@@ -400,7 +399,7 @@ def package_applicability_changed_as_expected(
         output = host.execute(f'rpm -q {package_basename}').stdout
         current_package = output[:-1]
         assert package_basename in current_package
-        if current_package == package_filename:
+        if current_package == package_filename:  # noqa: SIM108
             # we have already checked if applicable package count changed,
             # in case the same version as prior was installed and present.
             prior_package = None  # package must not have been present before this modification
@@ -495,13 +494,16 @@ def _publish_and_wait(sat, org, cv, search_rate=1, max_tries=10):
     task_id = sat.api.ContentView(id=cv.id).publish({'id': cv.id, 'organization': org})['id']
     assert task_id, f'No task was invoked to publish the Content-View: {cv.id}.'
     # Should take < 1 minute, check in 5s intervals
-    sat.wait_for_tasks(
-        search_query=(f'label = Actions::Katello::ContentView::Publish and id = {task_id}'),
-        search_rate=search_rate,
-        max_tries=max_tries,
-    ), (
-        f'Failed to publish the Content-View: {cv.id}, in time.'
-        f'Task: {task_id} failed, or timed out ({search_rate*max_tries}s).'
+    (
+        sat.wait_for_tasks(
+            search_query=(f'label = Actions::Katello::ContentView::Publish and id = {task_id}'),
+            search_rate=search_rate,
+            max_tries=max_tries,
+        ),
+        (
+            f'Failed to publish the Content-View: {cv.id}, in time.'
+            f'Task: {task_id} failed, or timed out ({search_rate*max_tries}s).'
+        ),
     )
 
 
@@ -623,13 +625,16 @@ def test_positive_install_in_hc(
             'organization_id': module_sca_manifest_org.id,
         },
     )['id']
-    target_sat.wait_for_tasks(
-        search_query=(f'label = Actions::RemoteExecution::RunHostsJob and id = {task_id}'),
-        search_rate=15,
-        max_tries=10,
-    ), (
-        f'Could not install erratum: {CUSTOM_REPO_ERRATA_ID}, to Host-Collection.'
-        f' Task: {task_id} failed, or timed out.'
+    (
+        target_sat.wait_for_tasks(
+            search_query=(f'label = Actions::RemoteExecution::RunHostsJob and id = {task_id}'),
+            search_rate=15,
+            max_tries=10,
+        ),
+        (
+            f'Could not install erratum: {CUSTOM_REPO_ERRATA_ID}, to Host-Collection.'
+            f' Task: {task_id} failed, or timed out.'
+        ),
     )
     for client in content_hosts:
         # No applicable errata after install on all clients
@@ -654,6 +659,7 @@ def test_positive_install_in_hc(
 @pytest.mark.rhel_ver_match('[^6]')
 @pytest.mark.no_containers
 @pytest.mark.e2e
+@pytest.mark.pit_client
 def test_positive_install_multiple_in_host(
     target_sat, rhel_contenthost, module_org, activation_key, module_lce
 ):
@@ -928,8 +934,8 @@ def test_positive_install_multiple_in_host(
         f' but installed {len(updated_packages)}.'
     )
     # Check sets of installed package filename(s) strings, matches expected
-    assert set(updated_packages) == set(
-        security_packages_to_install
+    assert (
+        set(updated_packages) == set(security_packages_to_install)
     ), 'Expected package version filename(s) and installed package version filenam(s) are not the same.'
 
 
@@ -1340,176 +1346,10 @@ def test_positive_incremental_update_required(
     assert 'next_version' in response[0], 'Incremental update should be suggested at this point'
 
 
-def _run_remote_command_on_content_host(command, vm, return_result=False):
-    result = vm.run(command)
-    assert result.status == 0
-    if return_result:
-        return result.stdout
-    return None
-
-
-def _set_prerequisites_for_swid_repos(vm):
-    _run_remote_command_on_content_host(
-        f'curl --insecure --remote-name {settings.repos.swid_tools_repo}', vm
-    )
-    _run_remote_command_on_content_host('mv *swid*.repo /etc/yum.repos.d', vm)
-    _run_remote_command_on_content_host('yum install -y swid-tools', vm)
-    _run_remote_command_on_content_host('yum install -y dnf-plugin-swidtags', vm)
-
-
-def _validate_swid_tags_installed(vm, module_name):
-    result = _run_remote_command_on_content_host(
-        f"swidq -i -n {module_name} | grep 'Name'", vm, return_result=True
-    )
-    assert module_name in result
-
-
 @pytest.fixture
 def errata_host_lce(module_sca_manifest_org, target_sat):
     """Create and return a new lce in module SCA org."""
     return target_sat.api.LifecycleEnvironment(organization=module_sca_manifest_org).create()
-
-
-@pytest.mark.tier3
-@pytest.mark.upgrade
-@pytest.mark.pit_client
-@pytest.mark.no_containers
-@pytest.mark.rhel_ver_match('8')
-def test_errata_installation_with_swidtags(
-    module_sca_manifest_org,
-    rhel_contenthost,
-    errata_host_lce,
-    target_sat,
-):
-    """Verify errata installation with swid_tags and swid tags get updated after
-    module stream update.
-
-    :id: 43a59b9a-eb9b-4174-8b8e-73d923b1e51e
-
-    :setup:
-
-        1. rhel8 contenthost checked out, using org with simple content access.
-        2. create satellite repositories having rhel8 baseOS, prereqs, custom content w/ swid tags.
-        3. associate repositories to org, lifecycle environment, and cv. Sync all content.
-        4. publish & promote to environment, content view version with all content.
-        5. create activation key, for registering host to cv.
-
-    :steps:
-
-        1. register host using cv's activation key, assert succeeded.
-        2. install swid-tools, dnf-plugin-swidtags packages on content host.
-        3. install older module stream and generate errata, swid tag.
-        4. assert errata count, swid tags are generated.
-        5. install errata via updating module stream.
-        6. assert errata count and swid tag changed after module update.
-
-    :expectedresults:
-        swid tags should get updated after errata installation via module stream update
-
-    :CaseAutomation: Automated
-
-    :parametrized: yes
-
-    :CaseImportance: Critical
-
-    """
-    module_name = 'kangaroo'
-    version = '20180704111719'
-    org = module_sca_manifest_org
-    lce = errata_host_lce
-    cv = target_sat.api.ContentView(
-        organization=org,
-        environment=[lce],
-    ).create()
-
-    repos = {
-        'base_os': settings.repos.rhel8_os.baseos,  # base rhel8
-        'sat_tools': settings.repos.rhel8_os.appstream,  # swid prereqs
-        'swid_tags': settings.repos.swid_tag.url,  # module stream pkgs and errata
-    }
-    # associate repos with sat, org, lce, cv, and sync
-    for r in repos:
-        target_sat.cli_factory.setup_org_for_a_custom_repo(
-            {
-                'url': repos[r],
-                'organization-id': org.id,
-                'lifecycle-environment-id': lce.id,
-                'content-view-id': cv.id,
-            },
-        )
-    # promote newest cv version with all repos/content
-    cv = cv_publish_promote(
-        sat=target_sat,
-        org=org,
-        cv=cv,
-        lce=lce,
-    )['content-view']
-    # ak in env, tied to content-view
-    ak = target_sat.api.ActivationKey(
-        organization=org,
-        environment=lce,
-        content_view=cv,
-    ).create()
-    # register host with ak, succeeds
-    result = rhel_contenthost.register(
-        activation_keys=ak.name,
-        target=target_sat,
-        org=org,
-        loc=None,
-    )
-    assert result.status == 0, f'Failed to register the host {target_sat.hostname},\n{result}'
-    assert (
-        rhel_contenthost.subscribed
-    ), f'Failed to subscribe the host {target_sat.hostname}, to content.'
-    result = rhel_contenthost.execute(r'subscription-manager repos --enable \*')
-    assert result.status == 0, f'Failed to enable repositories with subscription-manager,\n{result}'
-
-    # install outdated module stream package
-    _set_prerequisites_for_swid_repos(rhel_contenthost)
-    result = rhel_contenthost.execute(f'dnf -y module install {module_name}:0:{version}')
-    assert (
-        result.status == 0
-    ), f'Failed to install module stream package: {module_name}:0:{version}.\n{result.stdout}'
-    # recalculate errata after install of old module stream
-    rhel_contenthost.execute('subscription-manager repos')
-
-    # validate swid tags Installed
-    result = rhel_contenthost.execute(
-        f'swidq -i -n {module_name} | grep "File" | grep -o "rpm-.*.swidtag"',
-    )
-    assert (
-        result.status == 0
-    ), f'An error occured trying to fetch swid tags for {module_name}.\n{result}'
-    before_errata_apply_result = result.stdout
-    assert before_errata_apply_result != '', f'Found no swid tags contained in {module_name}.'
-    assert (app_errata_count := rhel_contenthost.applicable_errata_count) == 1, (
-        f'Found {rhel_contenthost.applicable_errata_count} applicable errata,'
-        f' after installing {module_name}:0:{version}, expected 1.'
-    )
-
-    # apply modular errata
-    result = rhel_contenthost.execute(f'dnf -y module update {module_name}')
-    assert (
-        result.status == 0
-    ), f'Failed to update module stream package: {module_name}.\n{result.stdout}'
-    assert rhel_contenthost.execute('dnf -y upload-profile').status == 0
-
-    # recalculate and check errata after modular update
-    rhel_contenthost.execute('subscription-manager repos')
-    app_errata_count -= 1
-    assert rhel_contenthost.applicable_errata_count == app_errata_count, (
-        f'Found {rhel_contenthost.applicable_errata_count} applicable errata, after modular update of {module_name},'
-        f' expected {app_errata_count}.'
-    )
-    # swidtags were updated based on package version
-    result = rhel_contenthost.execute(
-        f'swidq -i -n {module_name} | grep "File" | grep -o "rpm-.*.swidtag"',
-    )
-    assert (
-        result.status == 0
-    ), f'An error occured trying to fetch swid tags for {module_name}.\n{result}'
-    after_errata_apply_result = result.stdout
-    assert before_errata_apply_result != after_errata_apply_result
 
 
 @pytest.fixture(scope='module')

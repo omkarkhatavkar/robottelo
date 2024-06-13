@@ -1,4 +1,5 @@
 """Utility module to handle the virtwho configure UI/CLI/API testing"""
+
 import json
 import re
 import uuid
@@ -99,18 +100,14 @@ def register_system(system, activation_key=None, org='Default_Organization', env
     runcmd('subscription-manager clean', system)
     runcmd('rpm -qa | grep katello-ca-consumer | xargs rpm -e |sort', system)
     runcmd(
-        'rpm -ihv http://{}/pub/katello-ca-consumer-latest.noarch.rpm'.format(
-            settings.server.hostname
-        ),
+        f'rpm -ihv http://{settings.server.hostname}/pub/katello-ca-consumer-latest.noarch.rpm',
         system,
     )
     cmd = f'subscription-manager register --org={org} --environment={env} '
     if activation_key is not None:
         cmd += f'--activationkey={activation_key}'
     else:
-        cmd += '--username={} --password={}'.format(
-            settings.server.admin_username, settings.server.admin_password
-        )
+        cmd += f'--username={settings.server.admin_username} --password={settings.server.admin_password}'
     ret, stdout = runcmd(cmd, system)
     if ret == 0 or "system has been registered" in stdout:
         return True
@@ -170,9 +167,7 @@ def get_configure_command(config_id, org=DEFAULT_ORG):
     :param str org: the satellite organization name.
     """
     username, password = Base._get_username_password()
-    return "hammer -u {} -p {} virt-who-config deploy --id {} --organization '{}' ".format(
-        username, password, config_id, org
-    )
+    return f"hammer -u {username} -p {password} virt-who-config deploy --id {config_id} --organization '{org}' "
 
 
 def get_configure_file(config_id):
@@ -214,10 +209,7 @@ def check_message_in_rhsm_log(message):
         delay=2,
     )
     logs = get_rhsm_log()
-    for line in logs.split('\n'):
-        if message in line:
-            return message
-    return False
+    return any(message in line for line in logs.split('\n'))
 
 
 def _get_hypervisor_mapping(hypervisor_type):
@@ -466,6 +458,33 @@ def hypervisor_json_create(hypervisors, guests):
     return {"hypervisors": hypervisors_list}
 
 
+def hypervisor_fake_json_create(hypervisors, guests):
+    """
+    Create a hypervisor guest json data for fake config usages. For example:
+    {'hypervisors': [{'uuid': '820b5143-3885-4dba-9358-4ce8c30d934e',
+    'guests': [{'guestId': 'afb91b1f-8438-46f5-bc67-d7ab328ef782', 'state': 1,
+    'attributes': {'active': 1, 'virtWhoType': 'esx'}}]}]}
+    :param hypervisors: how many hypervisors will be created
+    :param guests: how many guests will be created
+    """
+    hypervisors_list = [
+        {
+            'guests': [
+                {
+                    "guestId": str(uuid.uuid4()),
+                    "state": 1,
+                    "attributes": {"active": 1, "virtWhoType": "esx"},
+                }
+                for _ in range(guests)
+            ],
+            'name': str(uuid.uuid4()),
+            'uuid': str(uuid.uuid4()),
+        }
+        for _ in range(hypervisors)
+    ]
+    return {"hypervisors": hypervisors_list}
+
+
 def create_fake_hypervisor_content(org_label, hypervisors, guests):
     """
     Post the fake hypervisor content to satellite server
@@ -535,3 +554,49 @@ def get_configure_command_option(deploy_type, args, org=DEFAULT_ORG):
     if deploy_type == 'name':
         return f"hammer -u {username} -p {password} virt-who-config deploy --name {args['name']} --organization '{org}' "
     return None
+
+
+def vw_fake_conf_create(
+    owner,
+    rhsm_hostname,
+    rhsm_username,
+    rhsm_encrypted_password,
+    fake_conf_file,
+    json_file,
+    is_hypervisor=True,
+):
+    """Create fake config file
+    :param owner: Name of the Owner
+    :param rhsm_hostname: Name of the rhsm_hostname
+    :param rhsm_username: Name of the rhsm_username
+    :param rhsm_encrypted_password: Value of the rhsm_encrypted_password
+    :param fake_conf_file: Name of the fake_conf_file
+    :param json_file: Name of the json_file
+    :param is_hypervisor: Default ir True
+    :return:
+    """
+    conf_name = fake_conf_file.split("/")[-1].split(".")[0]
+    file = f'{fake_conf_file}\n'
+    title = f'[{conf_name}]\n'
+    type = 'type=fake\n'
+    json = f'file={json_file}\n'
+    is_hypervisor = f'is_hypervisor={is_hypervisor}\n'
+    owner = f'owner={owner}\n'
+    env = 'env = Library\n'
+    rhsm_hostname = f'rhsm_hostname={rhsm_hostname}\n'
+    rhsm_username = f'rhsm_username={rhsm_username}\n'
+    rhsm_encrypted_password = f'rhsm_encrypted_password={rhsm_encrypted_password}\n'
+    rhsm_prefix = 'rhsm_prefix=/rhsm\n'
+    rhsm_port = 'rhsm_port=443\n'
+    cmd = f'cat <<EOF > {file}{title}{type}{json}{is_hypervisor}{owner}{env}{rhsm_hostname}{rhsm_username}{rhsm_encrypted_password}{rhsm_prefix}{rhsm_port}EOF'
+    runcmd(cmd)
+
+
+def vw_run_option(option):
+    """virt who run by option
+    :param option:  -d, --debug  -o, --one-shot  -i INTERVAL, --interval INTERVAL -p, --print -c CONFIGS, --config CONFIGS --version
+    :ruturn:
+    """
+    runcmd('systemctl stop virt-who')
+    runcmd('pkill -9 virt-who')
+    runcmd(f'virt-who -{option}')

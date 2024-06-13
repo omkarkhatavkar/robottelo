@@ -11,6 +11,7 @@
 :CaseImportance: High
 
 """
+
 from datetime import datetime, timedelta
 import re
 from urllib.parse import urlparse
@@ -34,7 +35,6 @@ from robottelo.constants import (
     VIRT_WHO_HYPERVISOR_TYPES,
 )
 from robottelo.exceptions import CLIFactoryError
-from robottelo.utils.issue_handlers import is_open
 from robottelo.utils.virtwho import create_fake_hypervisor_content
 
 if not setting_is_set('clients') or not setting_is_set('fake_manifest'):
@@ -219,17 +219,14 @@ def test_positive_end_to_end(
             for repo_index in range(len(module_repos_collection_with_manifest.repos_info))
         }
         assert actual_repos == expected_repos
-        # Check start date for BZ#1920860 (but handle BZ#2112320 offset-by-one bug)
+        # Check start date for BZ#1920860
         custom_product_name = module_repos_collection_with_manifest.custom_product['name']
         custom_sub = next(
             item
             for item in chost['subscriptions']['resources']['assigned']
             if item["Repository Name"] == custom_product_name
         )
-        if is_open('BZ:2112320'):
-            assert startdate in custom_sub['Expires']
-        else:
-            assert startdate in custom_sub['Starts']
+        assert startdate in custom_sub['Starts']
         # Ensure host status and details show correct RHEL lifecycle status
         host_status = session.host.host_status(vm.hostname)
         host_rhel_lcs = session.contenthost.read(vm.hostname, widget_names=['permission_denied'])
@@ -870,7 +867,7 @@ def test_positive_check_ignore_facts_os_setting(
         # Change necessary setting to true
         set_ignore_facts_for_os(module_target_sat, True)
         # Add cleanup function to roll back setting to default value
-        request.addfinalizer(set_ignore_facts_for_os)
+        request.addfinalizer(lambda: set_ignore_facts_for_os(module_target_sat, False))
         # Read all facts for corresponding host
         facts = host.get_facts(data={'per_page': 10000})['results'][vm.hostname]
         # Modify OS facts to another values and upload them to the server
@@ -1773,7 +1770,7 @@ def test_pagination_multiple_hosts_multiple_pages(session, module_host_template,
             f'os = {module_host_template.operatingsystem.name}'
         )
         # Assert dump of fake hosts found includes the higest numbered host created for this test
-        match = re.search(fr'test-{host_num:0>2}', str(all_fake_hosts_found))
+        match = re.search(rf'test-{host_num:0>2}', str(all_fake_hosts_found))
         assert match, 'Highest numbered host not found.'
         # Get all the pagination values
         pagination_values = session.contenthost.read_all('Pagination')['Pagination']
@@ -1811,8 +1808,8 @@ def test_search_for_virt_who_hypervisors(session, default_location, module_targe
         hypervisor_display_name = f'virt-who-{hypervisor_name}-{org.id}'
         # Search with hypervisor=True gives the correct result.
         assert (
-            session.contenthost.search('hypervisor = true')[0]['Name']
-        ) == hypervisor_display_name
+            (session.contenthost.search('hypervisor = true')[0]['Name']) == hypervisor_display_name
+        )
         # Search with hypervisor=false gives the correct result.
         content_hosts = [host['Name'] for host in session.contenthost.search('hypervisor = false')]
         assert hypervisor_display_name not in content_hosts

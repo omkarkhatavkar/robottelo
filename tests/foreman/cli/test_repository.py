@@ -11,11 +11,11 @@
 :CaseImportance: High
 
 """
+
 from random import choice
 from string import punctuation
 
 from fauxfactory import gen_alphanumeric, gen_integer, gen_string, gen_url
-from nailgun import entities
 import pytest
 import requests
 from wait_for import wait_for
@@ -229,7 +229,7 @@ class TestRepository:
         ),
         indirect=True,
     )
-    def test_positive_create_with_auth_yum_repo(self, repo_options, repo):
+    def test_positive_create_with_auth_yum_repo(self, target_sat, repo_options, repo):
         """Create YUM repository with basic HTTP authentication
 
         :id: da8309fd-3076-427b-a96f-8d883d6e944f
@@ -242,7 +242,7 @@ class TestRepository:
         """
         for key in 'url', 'content-type':
             assert repo.get(key) == repo_options[key]
-        repo = entities.Repository(id=repo['id']).read()
+        repo = target_sat.api.Repository(id=repo['id']).read()
         assert repo.upstream_username == repo_options['upstream-username']
 
     @pytest.mark.tier1
@@ -1728,7 +1728,7 @@ class TestRepository:
                 'content-type': 'srpm',
             }
         )
-        assert f"Successfully uploaded file '{SRPM_TO_UPLOAD}'" in result[0]['message']
+        assert f'Successfully uploaded file {SRPM_TO_UPLOAD}' in result[0]['message']
         assert (
             int(target_sat.cli.Repository.info({'id': repo['id']})['content-counts']['srpms']) == 1
         )
@@ -2017,7 +2017,7 @@ class TestRepository:
     @pytest.mark.tier2
     @pytest.mark.parametrize(
         'repo_options',
-        **parametrized([{'content_type': 'yum', 'url': CUSTOM_RPM_SHA}]),
+        **parametrized([{'content-type': 'yum', 'url': CUSTOM_RPM_SHA}]),
         indirect=True,
     )
     def test_positive_sync_sha_repo(self, repo_options, module_target_sat):
@@ -2042,7 +2042,7 @@ class TestRepository:
     @pytest.mark.tier2
     @pytest.mark.parametrize(
         'repo_options',
-        **parametrized([{'content_type': 'yum', 'url': CUSTOM_3RD_PARTY_REPO}]),
+        **parametrized([{'content-type': 'yum', 'url': CUSTOM_3RD_PARTY_REPO}]),
         indirect=True,
     )
     def test_positive_sync_third_party_repo(self, repo_options, module_target_sat):
@@ -2565,10 +2565,10 @@ class TestFileRepository:
                 'product-id': repo['product']['id'],
             }
         )
-        assert f"Successfully uploaded file '{RPM_TO_UPLOAD}'" in result[0]['message']
+        assert f'Successfully uploaded file {RPM_TO_UPLOAD}' in result[0]['message']
         repo = target_sat.cli.Repository.info({'id': repo['id']})
         assert repo['content-counts']['files'] == '1'
-        filesearch = entities.File().search(
+        filesearch = target_sat.api.File().search(
             query={"search": f"name={RPM_TO_UPLOAD} and repository={repo['name']}"}
         )
         assert filesearch[0].name == RPM_TO_UPLOAD
@@ -2610,7 +2610,7 @@ class TestFileRepository:
                 'product-id': repo['product']['id'],
             }
         )
-        assert f"Successfully uploaded file '{RPM_TO_UPLOAD}'" in result[0]['message']
+        assert f'Successfully uploaded file {RPM_TO_UPLOAD}' in result[0]['message']
         repo = target_sat.cli.Repository.info({'id': repo['id']})
         assert int(repo['content-counts']['files']) > 0
         files = target_sat.cli.File.list({'repository-id': repo['id']})
@@ -2775,11 +2775,11 @@ class TestFileRepository:
                 'product-id': repo['product']['id'],
             }
         )
-        assert f"Successfully uploaded file '{text_file_name}'" in result[0]['message']
+        assert f"Successfully uploaded file {text_file_name}" in result[0]['message']
         repo = target_sat.cli.Repository.info({'id': repo['id']})
         # Assert there is only one file
         assert repo['content-counts']['files'] == '1'
-        filesearch = entities.File().search(
+        filesearch = target_sat.api.File().search(
             query={"search": f"name={text_file_name} and repository={repo['name']}"}
         )
         assert text_file_name == filesearch[0].name
@@ -2793,11 +2793,11 @@ class TestFileRepository:
                 'product-id': repo['product']['id'],
             }
         )
-        assert f"Successfully uploaded file '{text_file_name}'" in result[0]['message']
+        assert f"Successfully uploaded file {text_file_name}" in result[0]['message']
         repo = target_sat.cli.Repository.info({'id': repo['id']})
         # Assert there is still only one file
         assert repo['content-counts']['files'] == '1'
-        filesearch = entities.File().search(
+        filesearch = target_sat.api.File().search(
             query={"search": f"name={text_file_name} and repository={repo['name']}"}
         )
         # Assert file name has not changed

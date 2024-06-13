@@ -2,7 +2,7 @@
 
 :Requirement: Provisioning
 
-:CaseAutomation: NotAutomated
+:CaseAutomation: Automated
 
 :CaseComponent: Provisioning
 
@@ -11,6 +11,7 @@
 :CaseImportance: Critical
 
 """
+
 import re
 
 from fauxfactory import gen_string
@@ -561,11 +562,11 @@ def test_rhel_pxe_provisioning_fips_enabled(
     # Verify FIPS is enabled on host after provisioning is completed sucessfully
     if int(host_os.major) >= 8:
         result = provisioning_host.execute('fips-mode-setup --check')
-        fips_status = 'FIPS mode is disabled' if is_open('BZ:2240076') else 'FIPS mode is enabled'
+        fips_status = 'FIPS mode is disabled' if is_open('SAT-20386') else 'FIPS mode is enabled'
         assert fips_status in result.stdout
     else:
         result = provisioning_host.execute('cat /proc/sys/crypto/fips_enabled')
-        assert (0 if is_open('BZ:2240076') else 1) == int(result.stdout)
+        assert (0 if is_open('SAT-20386') else 1) == int(result.stdout)
 
     # Run a command on the host using REX to verify that Satellite's SSH key is present on the host
     template_id = (
@@ -733,4 +734,6 @@ def test_rhel_provisioning_using_realm():
         3. Host installs right version of RHEL
         4. Satellite is able to run REX job on the host
         5. Host is registered to Satellite and subscription status is 'Success'
+
+    :CaseAutomation: NotAutomated
     """

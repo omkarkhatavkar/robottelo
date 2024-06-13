@@ -11,6 +11,7 @@
 :CaseImportance: High
 
 """
+
 import re
 from string import punctuation
 import tempfile
@@ -1249,12 +1250,12 @@ class TestRepository:
         repo = repo.update(['mirroring_policy', 'ignorable_content'])
         repo.sync()
         with pytest.raises(AssertionError):
-            target_sat.md5_by_url(f'{repo.full_path}.treeinfo')
+            target_sat.checksum_by_url(f'{repo.full_path}.treeinfo')
 
         repo.ignorable_content = []
         repo = repo.update(['ignorable_content'])
         repo.sync()
-        assert target_sat.md5_by_url(
+        assert target_sat.checksum_by_url(
             f'{repo.full_path}.treeinfo'
         ), 'The treeinfo file is missing in the KS repo but it should be there.'
 
@@ -1759,7 +1760,7 @@ class TestDockerRepository:
         :BZ: 1475121, 1580510
 
         """
-        msg = "404, message=\'Not Found\'"
+        msg = "404, message='Not Found'"
         with pytest.raises(TaskFailedError, match=msg):
             repo.sync()
 

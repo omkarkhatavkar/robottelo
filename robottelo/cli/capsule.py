@@ -19,6 +19,7 @@ Subcommands::
     refresh-features              Refresh capsule features
     update                        Update a capsule
 """
+
 from robottelo.cli.base import Base
 
 
@@ -96,6 +97,14 @@ class Capsule(Base):
         """Trigger content counts update."""
 
         cls.command_sub = 'content update-counts'
+
+        return cls.execute(cls._construct_command(options), output_format='json')
+
+    @classmethod
+    def content_verify_checksum(cls, options):
+        """Trigger verify checksum task."""
+
+        cls.command_sub = 'content verify-checksum'
 
         return cls.execute(cls._construct_command(options), output_format='json')
 

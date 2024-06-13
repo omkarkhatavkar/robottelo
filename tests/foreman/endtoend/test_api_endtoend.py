@@ -11,13 +11,14 @@
 :CaseImportance: High
 
 """
+
 from collections import defaultdict
 import http
 from pprint import pformat
 
 from deepdiff import DeepDiff
 from fauxfactory import gen_string
-from nailgun import client, entities
+from nailgun import client
 import pytest
 
 from robottelo import constants
@@ -1005,39 +1006,41 @@ class TestEndToEnd:
     def fake_manifest_is_set(self):
         return setting_is_set('fake_manifest')
 
-    def test_positive_find_default_org(self):
+    def test_positive_find_default_org(self, class_target_sat):
         """Check if 'Default Organization' is present
 
         :id: c6e45b36-d8b6-4507-8dcd-0645668496b9
 
         :expectedresults: 'Default Organization' is found
         """
-        results = entities.Organization().search(
+        results = class_target_sat.api.Organization().search(
             query={'search': f'name="{constants.DEFAULT_ORG}"'}
         )
         assert len(results) == 1
         assert results[0].name == constants.DEFAULT_ORG
 
-    def test_positive_find_default_loc(self):
+    def test_positive_find_default_loc(self, class_target_sat):
         """Check if 'Default Location' is present
 
         :id: 1f40b3c6-488d-4037-a7ab-250a02bf919a
 
         :expectedresults: 'Default Location' is found
         """
-        results = entities.Location().search(query={'search': f'name="{constants.DEFAULT_LOC}"'})
+        results = class_target_sat.api.Location().search(
+            query={'search': f'name="{constants.DEFAULT_LOC}"'}
+        )
         assert len(results) == 1
         assert results[0].name == constants.DEFAULT_LOC
 
     @pytest.mark.build_sanity
-    def test_positive_find_admin_user(self):
+    def test_positive_find_admin_user(self, class_target_sat):
         """Check if Admin User is present
 
         :id: 892fdfcd-18c0-42ef-988b-f13a04097f5c
 
         :expectedresults: Admin User is found and has Admin role
         """
-        results = entities.User().search(query={'search': 'login=admin'})
+        results = class_target_sat.api.User().search(query={'search': 'login=admin'})
         assert len(results) == 1
         assert results[0].login == 'admin'
 
@@ -1050,7 +1053,7 @@ class TestEndToEnd:
     @pytest.mark.skipif(
         (not settings.robottelo.REPOS_HOSTING_URL), reason='Missing repos_hosting_url'
     )
-    def test_positive_end_to_end(self, function_entitlement_manifest, target_sat, rhel_contenthost):
+    def test_positive_end_to_end(self, function_sca_manifest, target_sat, rhel_contenthost):
         """Perform end to end smoke tests using RH and custom repos.
 
         1. Create a new user with admin permissions
@@ -1091,10 +1094,9 @@ class TestEndToEnd:
         # step 2.1: Create a new organization
         user_cfg = user_nailgun_config(login, password)
         org = target_sat.api.Organization(server_config=user_cfg).create()
-        org.sca_disable()
 
         # step 2.2: Upload manifest
-        target_sat.upload_manifest(org.id, function_entitlement_manifest.content)
+        target_sat.upload_manifest(org.id, function_sca_manifest.content)
 
         # step 2.3: Create a new lifecycle environment
         le1 = target_sat.api.LifecycleEnvironment(server_config=user_cfg, organization=org).create()
@@ -1152,12 +1154,7 @@ class TestEndToEnd:
             name=activation_key_name, environment=le1, organization=org, content_view=content_view
         ).create()
 
-        # step 2.13: Add the products to the activation key
-        for sub in target_sat.api.Subscription(organization=org).search():
-            if sub.name == constants.DEFAULT_SUBSCRIPTION_NAME:
-                activation_key.add_subscriptions(data={'quantity': 1, 'subscription_id': sub.id})
-                break
-        # step 2.13.1: Enable product content
+        # step 2.13: Enable product content
         activation_key.content_override(
             data={
                 'content_overrides': [
