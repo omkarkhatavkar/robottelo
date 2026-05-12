@@ -17,7 +17,7 @@ pytest==8.2.2
 pytest-order==1.2.1
 pytest-services==2.2.1
 pytest-mock==3.14.0
-pytest-reportportal==5.4.1
+pytest-reportportal==5.6.7
 pytest-xdist==3.6.1
 pytest-fixturecollection==0.1.2
 pytest-ibutsu==2.2.4
